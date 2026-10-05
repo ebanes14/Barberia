@@ -137,6 +137,7 @@ async function dl(name,data){try{const u=URL.createObjectURL(new Blob([data],{ty
 const stamp=()=>today();
 function datos(){const n=db.movs.length;
  return`<h1>Datos</h1><div class="c mu">${db.clients.length} clientes · ${n} movimientos · ${db.turnos.length} turnos</div>
+ <h2>Suscripción</h2><div class="c"><div class="row"><span class="mu">Código de cliente</span><b>${lic.id}</b></div><div class="row" style="margin-top:6px"><span class="mu">${PUB?(left()>=0?"Activa hasta":"Venció el"):"Sin control de suscripción"}</span><b>${PUB?fd(validUntil()):""}</b></div>${PUB?`<button class="b s" style="margin-top:10px" onclick="renewForm()">Ingresar clave de renovación</button>`:""}</div>
  <h2>Copia de seguridad</h2><div class="c"><p class="mu" style="margin-top:0">Los datos viven en este teléfono. Descargá una copia seguido y guardala en Drive o WhatsApp.</p><button class="b" onclick="backup()">Descargar copia completa</button></div>
  <div class="c"><p class="mu" style="margin-top:0">Recupera los datos desde una copia descargada antes (por ejemplo, de la versión anterior o si cambiás de celular).</p><input type="file" accept=".json,application/json" onchange="restore(this)"></div>
  <h2>Caja en Excel</h2><div class="c"><p class="mu" style="margin-top:0">Todos los movimientos en un archivo CSV que se abre con Excel.</p><button class="b s" onclick="csv()">Descargar caja (CSV)</button></div>
@@ -270,13 +271,40 @@ function exportEq(){const[f,t]=rango(hp),L=eqRows(f,t),H=x=>[x,1],$=n=>[n,2],B=n
  const res=[["Horas y pagos del equipo - Barbería"],["Desde",fd(f)],["Hasta",fd(t)],[],[H("Barbero"),H("Horas"),H("Días trabajados"),H("Ventas"),H("Forma de pago"),H("A pagar")],...L.map(x=>[x.b.name,d2(x.h),x.d,$(x.v),payTxt(x.b),$(Math.round(x.p))]),["TOTAL",d2(sm(L,x=>x.h)),"",B(sm(L,x=>x.v)),"",B(Math.round(sm(L,x=>x.p)))]];
  const det=[[H("Fecha"),H("Barbero"),H("Entrada"),H("Salida"),H("Horas")],...db.shifts.filter(x=>x.date>=f&&x.date<=t).sort((a,b)=>(a.date+a.in).localeCompare(b.date+b.in)).map(x=>[fd(x.date),bname(x.barberId),x.in,x.out||"sin salida",d2(dur(x))])];
  dl("horas-y-pagos-"+{d:"dia",w:"semana",m:"mes"}[hp.p]+"-"+f+".xlsx",xlsxBlob([["Resumen",res],["Horas por día",det]]))}
+
+const PUB=null;
+const TRIAL=7;
+let lic=null,lockMsg="";
+const dys=(a,b)=>Math.round((new Date(b+"T12:00:00")-new Date(a+"T12:00:00"))/864e5);
+const addD=(a,n)=>{const d=new Date(a+"T12:00:00");d.setDate(d.getDate()+n);return iso(d)};
+const licSave=()=>{try{localStorage.setItem("barberia_lic",JSON.stringify(lic))}catch(e){}};
+function licInit(){const t=today();try{lic=JSON.parse(localStorage.getItem("barberia_lic"))}catch(e){lic=null}
+ if(!lic||!lic.id){const A="ABCDEFGHJKLMNPQRSTUVWXYZ23456789",r=crypto.getRandomValues(new Uint8Array(6));lic={id:[...r].map(x=>A[x%32]).join(""),inst:t,until:null,seen:t};licSave()}}
+const validUntil=()=>{const tr=addD(lic.inst,TRIAL);return lic.until&&lic.until>tr?lic.until:tr};
+const left=()=>dys(today(),validUntil());
+function licTick(){const t=today();lockMsg=lic.seen>t&&dys(t,lic.seen)>1?"La fecha del teléfono no es correcta. Corregila para continuar.":"";if(!lockMsg&&lic.seen<t){lic.seen=t;licSave()}}
+const isLocked=()=>!!(lockMsg||left()<0);
+const b64=x=>Uint8Array.from(atob(x.replace(/-/g,"+").replace(/_/g,"/")),c=>c.charCodeAt(0));
+async function activate(tok){const m=$("#lm"),say=t=>{if(m)m.textContent=t;else alert(t)};
+ try{const p=String(tok).trim().split(".");if(p.length!==3)throw"Clave inválida";const[id,u,sg]=p;
+  if(id!==lic.id)throw"Esta clave es de otro dispositivo";
+  const d=u.slice(0,4)+"-"+u.slice(4,6)+"-"+u.slice(6,8);
+  const k=await crypto.subtle.importKey("jwk",PUB,{name:"ECDSA",namedCurve:"P-256"},false,["verify"]);
+  if(!await crypto.subtle.verify({name:"ECDSA",hash:"SHA-256"},k,b64(sg),new TextEncoder().encode(id+"."+u)))throw"Clave inválida";
+  if(d<today())throw"Esta clave ya venció";
+  if(!lic.until||d>lic.until)lic.until=d;licSave();render();if(!m)alert("Listo. Suscripción activa hasta el "+fd(lic.until))
+ }catch(e){say(typeof e==="string"?e:"Clave inválida")}}
+const lockHtml=()=>`<div style="text-align:center;margin-top:8vh"><div style="font-size:48px">🔒</div><h1>${lockMsg?"Fecha incorrecta":"Suscripción vencida"}</h1><p class="mu">${lockMsg||"Para seguir usando la app, pedí tu clave de activación. Tus datos están guardados y no se pierden."}</p><div class="c"><div class="mu">Tu código de cliente</div><div class="big" style="font-size:30px;letter-spacing:4px">${lic.id}</div></div><div style="text-align:left"><label>Clave de activación</label><input id="lk" placeholder="Pegá la clave acá" autocapitalize="off" autocomplete="off"></div><button class="b" onclick="activate($('#lk').value)">Activar</button><p id="lm" class="red"></p></div>`;
+const banner=()=>PUB&&left()>=0&&left()<=5?`<div class="c" style="background:var(--acl)">⏳ Tu suscripción vence ${left()==0?"hoy":"en "+left()+" día"+(left()==1?"":"s")}. Pedí tu clave para renovar.</div>`:"";
+const renewForm=()=>form("Renovar suscripción",[{k:"k",l:"Clave de activación"}],v=>{activate(v.k)});
 function cfg(){form("Configurar beneficio",[{k:"g",l:"Puntos necesarios por beneficio",t:"number",v:db.cfg.goal},{k:"b",l:"Beneficio",v:db.cfg.benefit}],v=>{const g=parseInt(v.g);if(!g||g<1)return false;db.cfg=Object.assign(db.cfg,{goal:g,benefit:v.b||"Beneficio"})})}
 function redeem(id){if(confirm("¿Canjear "+db.cfg.benefit+" para "+cname(id)+"?")){{const c=cl(id);c.pu=(c.pu!=null?c.pu:(c.redeemed||0)*db.cfg.goal)+db.cfg.goal;c.redeemed=(c.redeemed||0)+1}save();render()}}
 
 function render(){
  if(!ready){$("#app").innerHTML='<p class="mu" style="text-align:center;margin-top:40vh">Cargando…</p>';return}
- $("#app").innerHTML={home,ag:agenda,cli:clients,pts:points,eq:equipo,dat:datos}[tab]()+`<p class="mu" id="st" style="text-align:center;margin-top:18px">${status}</p>`;
+ licTick();if(PUB&&isLocked()){$("#nav").innerHTML="";$("#app").innerHTML=lockHtml();return}
+ $("#app").innerHTML=banner()+{home,ag:agenda,cli:clients,pts:points,eq:equipo,dat:datos}[tab]()+`<p class="mu" id="st" style="text-align:center;margin-top:18px">${status}</p>`;
  $("#nav").innerHTML=tabs.map(t=>`<button class="${t[0]===tab?"on":""}" onclick="tab='${t[0]}';openC=null;openB=null;rep=false;eqRep=false;render();scrollTo(0,0)"><b>${t[1]}</b>${t[2]}</button>`).join("");
 }
-render();load();if("serviceWorker" in navigator)navigator.serviceWorker.register("sw.js").catch(()=>{});
+licInit();render();load();if("serviceWorker" in navigator)navigator.serviceWorker.register("sw.js").catch(()=>{});
 </script></body></html>
