@@ -31,10 +31,11 @@ nav div{display:flex;width:100%;max-width:480px}nav button{flex:1;background:non
 <nav><div id="nav"></div></nav>
 <script src="clave.js"></script>
 <script>
-let db={clients:[],movs:[],turnos:[],barbers:[],shifts:[],cfg:{goal:5,benefit:"Corte gratis",price:0}};
+let db={clients:[],movs:[],turnos:[],barbers:[],shifts:[],prices:[],cfg:{goal:5,benefit:"Corte gratis",price:0}};
 let DB=null,ready=false,status="",last={};
 function save(){try{localStorage.setItem("barberia",JSON.stringify(db));status="✓ Guardado en este teléfono"}catch(e){status="⚠ No se pudo guardar"}const el=$("#st");if(el)el.textContent=status}
 function load(){try{const l=JSON.parse(localStorage.getItem("barberia"));if(l)db=Object.assign(db,l)}catch(e){}
+ if(!db.prices)db.prices=[];if(!db.prices.length&&db.cfg.price>0){db.prices.push({id:uid(),name:"Corte",price:db.cfg.price,cut:true});db.cfg.price=0}
  try{navigator.storage&&navigator.storage.persist&&navigator.storage.persist()}catch(e){}
  status="✓ Guardado en este teléfono";ready=true;render()}
 const $=s=>document.querySelector(s);
@@ -46,7 +47,7 @@ const cl=id=>db.clients.find(c=>c.id===id);
 const cname=id=>cl(id)?cl(id).name:"Sin cliente";
 const esc=s=>String(s||"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 const inc=m=>m.type!=="fiado";
-let tab="home",sel=today(),cm=new Date(),openC=null,openB=null,rep=false,rp={p:"d",d:today()},hd=today(),eqRep=false,hp={p:"d",d:today()};
+let tab="home",sel=today(),cm=new Date(),openC=null,openB=null,rep=false,rp={f:today().slice(0,8)+"01",t:today()},hd=today(),eqRep=false,hp={p:"d",d:today()};
 const tabs=[["home","💵","Caja"],["ag","📅","Turnos"],["cli","👤","Clientes"],["pts","⭐","Puntos"],["eq","👥","Equipo"],["dat","💾","Datos"]];
 
 function sum(from,to){return db.movs.filter(m=>inc(m)&&m.date>=from&&m.date<=to).reduce((a,m)=>a+m.amount,0)}
@@ -66,25 +67,38 @@ function ptsCard(c,name){const g=db.cfg.goal,p=pts(c),a=avail(c),r=p%g;
 
 function form(title,fields,ok,pv){
  const h=document.createElement("div");h.className="sh";
- h.innerHTML=`<div><div class="row"><b>${title}</b><button class="bk" id="x">Cerrar</button></div>`+fields.map(f=>`<label>${f.l}</label>`+(f.o?`<select id="f_${f.k}">${f.o.map(o=>`<option value="${o[0]}"${o[0]==f.v?" selected":""}>${o[1]}</option>`).join("")}</select>`:`<input id="f_${f.k}" type="${f.t||"text"}" value="${esc(f.v)}"${f.t==="number"?' inputmode="decimal"':""}>`)).join("")+(pv?`<div class="c row" style="background:var(--acl)"><span>Total a cobrar</span><b id="pv"></b></div>`:"")+`<button class="b" id="ok">Guardar</button></div>`;
- const upd=()=>{if(!pv)return;const v={};fields.forEach(f=>v[f.k]=h.querySelector("#f_"+f.k).value.trim());$("#pv").textContent=money(pv(v))};
+ h.innerHTML=`<div><div class="row"><b>${title}</b><button class="bk" id="x">Cerrar</button></div>`+fields.map(f=>`<label>${f.l}</label>`+(f.o?(f.s?`<input id="s_${f.k}" placeholder="🔍 Escribí para buscar" autocomplete="off">`:"")+`<select id="f_${f.k}">${f.o.map(o=>`<option value="${o[0]}"${o[0]==f.v?" selected":""}>${o[1]}</option>`).join("")}</select>`:`<input id="f_${f.k}" type="${f.t||"text"}" value="${esc(f.v)}"${f.t==="number"?' inputmode="decimal"':""}>`)).join("")+(pv?`<div class="c row" style="background:var(--acl)"><span>Total a cobrar</span><b id="pv"></b></div>`:"")+`<button class="b" id="ok">Guardar</button></div>`;
+ const upd=()=>{if(!pv)return;const v={};fields.forEach(f=>v[f.k]=h.querySelector("#f_"+f.k).value.trim());const e=h.querySelector("#pv");if(e)e.textContent=money(pv(v))};
  h.oninput=upd;h.onchange=upd;setTimeout(upd);
  document.body.appendChild(h);
+ const norm=t=>String(t).normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase();
+ fields.forEach(f=>{const el=h.querySelector("#f_"+f.k);
+  if(f.s)h.querySelector("#s_"+f.k).oninput=e=>{const q=norm(e.target.value),cur=el.value,op=f.o.filter(o=>o[0]===""||norm(o[1]).includes(q));
+   el.innerHTML=op.map(o=>`<option value="${o[0]}"${o[0]==cur?" selected":""}>${esc(o[1])}</option>`).join("");
+   const first=op.find(o=>o[0]!=="");if(q&&first&&!op.some(o=>o[0]!==""&&o[0]==cur))el.value=first[0];
+   el.dispatchEvent(new Event("change",{bubbles:true}))};
+  if(f.c)el.addEventListener("change",()=>f.c(el.value,(k,x)=>{const t=h.querySelector("#f_"+k);if(t)t.value=x;upd()}))});
  h.onclick=e=>{if(e.target===h)h.remove()};$("#x").onclick=()=>h.remove();
  $("#ok").onclick=()=>{const v={};fields.forEach(f=>v[f.k]=h.querySelector("#f_"+f.k).value.trim());if(ok(v)!==false){h.remove();save();render()}};
 }
 const clientOpts=(blank)=>[...(blank?[["","Sin cliente"]]:[]),...db.clients.map(c=>[c.id,c.name])];
 
 const calc=v=>{const a=parseFloat(v.a)||0,d=parseFloat(v.dv)||0;return Math.max(0,v.dt2==="p"?a-a*d/100:v.dt2==="m"?a-d:a)};
-function newMov(type,clientId){
- const T={cobro:"Registrar cobro",fiado:"Servicio a cuenta (fiado)",pago:"Pago de deuda"}[type];
- form(T,[{k:"c",l:"Cliente",o:clientOpts(type==="cobro"),v:clientId||""},{k:"d",l:"Concepto",v:type==="pago"?"Pago":"Corte"},...(type!=="pago"&&db.barbers.some(b=>!b.off)?[{k:"b",l:"Barbero",o:barberOpts(),v:db.cfg.lastB||""}]:[]),{k:"a",l:type==="pago"?"Monto":"Precio",t:"number",v:type==="pago"?"":(db.cfg.price||"")},
-  ...(type!=="pago"?[{k:"dt2",l:"Descuento",o:[["n","Sin descuento"],["p","Porcentaje (%)"],["m","Monto ($)"]],v:"n"},{k:"dv",l:"Valor del descuento",t:"number"}]:[]),{k:"dt",l:"Fecha",t:"date",v:today()},
-  ...(type!=="pago"?[{k:"cut",l:"¿Cuenta como corte para puntos?",o:[["1","Sí"],["0","No"]],v:"1"}]:[])],v=>{
+function newMov(type,clientId){const pg=type==="pago",pr=db.prices,d0=clientId?debt(clientId):0;
+ form(pg?"Cobrar saldo pendiente":"Nuevo corte",[
+  {k:"c",l:"Cliente",s:1,o:clientOpts(!pg),v:clientId||"",c:pg?(id,set)=>{const d=id?debt(id):0;if(d>0)set("a",d)}:null},
+  ...(!pg&&pr.length?[{k:"pr",l:"Producto / corte",o:[["","Otro (precio libre)"],...pr.map(p=>[p.id,p.name+" · "+money(p.price)])],v:"",c:(id,set)=>{const p=pr.find(x=>x.id===id);if(p){set("d",p.name);set("a",p.price);set("cut",p.cut?"1":"0")}}}]:[]),
+  {k:"d",l:"Concepto",v:pg?"Cobro de saldo":"Corte"},
+  ...(!pg&&db.barbers.some(b=>!b.off)?[{k:"b",l:"Barbero",o:barberOpts(),v:db.cfg.lastB||""}]:[]),
+  {k:"a",l:pg?"Monto a cobrar":"Precio",t:"number",v:pg&&d0>0?d0:""},
+  ...(!pg?[{k:"dt2",l:"Descuento",o:[["n","Sin descuento"],["p","Porcentaje (%)"],["m","Monto ($)"]],v:"n"},{k:"dv",l:"Valor del descuento",t:"number"}]:[]),
+  {k:"p",l:"Forma de pago",o:pg?[["efe","Efectivo"],["tra","Transferencia"]]:[["efe","Efectivo"],["tra","Transferencia"],["cc","Cuenta corriente"]],v:"efe"},
+  {k:"dt",l:"Fecha",t:"date",v:today()},
+  ...(!pg?[{k:"cut",l:"¿Cuenta como corte para puntos?",o:[["1","Sí"],["0","No"]],v:"1"}]:[])],v=>{
   const a=parseFloat(v.a);if(!a||a<=0){alert("Ingresá un monto");return false}
-  if(type!=="cobro"&&!v.c){alert("Elegí un cliente");return false}
-  const fin=type==="pago"?a:calc(v);if(v.b!==undefined)db.cfg.lastB=v.b;
-  db.movs.push({id:uid(),date:v.dt||today(),clientId:v.c,barberId:v.b||"",concept:v.d,amount:fin,gross:a,type,corte:v.cut==="1"&&!!v.c})},type!=="pago"?calc:null);
+  const cc=!pg&&v.p==="cc";if((pg||cc)&&!v.c){alert(cc?"Para cargar a cuenta corriente elegí un cliente":"Elegí un cliente");return false}
+  const fin=pg?a:calc(v);if(v.b!==undefined)db.cfg.lastB=v.b;
+  db.movs.push({id:uid(),date:v.dt||today(),clientId:v.c,barberId:v.b||"",concept:v.d,amount:fin,gross:a,type:pg?"pago":cc?"fiado":"cobro",pay:cc?undefined:v.p,corte:!pg&&v.cut==="1"&&!!v.c})},pg?null:calc);
 }
 function newClient(c){
  form(c?"Editar cliente":"Nuevo cliente",[{k:"n",l:"Nombre",v:c&&c.name},{k:"p",l:"Teléfono",t:"tel",v:c&&c.phone},{k:"a",l:"Dirección",v:c&&c.address},{k:"b",l:"Cumpleaños",t:"date",v:c&&c.bday}],v=>{
@@ -93,20 +107,18 @@ function newClient(c){
 }
 function newTurno(){
  if(!db.clients.length){alert("Primero cargá un cliente");return}
- form("Nuevo turno · "+sel.split("-").reverse().join("/"),[{k:"c",l:"Cliente",o:clientOpts()},...(db.barbers.some(b=>!b.off)?[{k:"b",l:"Barbero",o:barberOpts(),v:db.cfg.lastB||""}]:[]),{k:"h",l:"Hora",t:"time",v:"10:00"},{k:"s",l:"Servicio",v:"Corte"}],v=>{
+ form("Nuevo turno · "+sel.split("-").reverse().join("/"),[{k:"c",l:"Cliente",s:1,o:clientOpts()},...(db.barbers.some(b=>!b.off)?[{k:"b",l:"Barbero",o:barberOpts(),v:db.cfg.lastB||""}]:[]),{k:"h",l:"Hora",t:"time",v:"10:00"},{k:"s",l:"Servicio",v:"Corte"}],v=>{
   if(!v.h){alert("Elegí la hora");return false}
   if(db.turnos.some(t=>t.date===sel&&t.time===v.h&&(t.barberId||"")===(v.b||""))&&!confirm("Ya hay un turno a esa hora. ¿Guardar igual?"))return false;
   if(v.b!==undefined)db.cfg.lastB=v.b;db.turnos.push({id:uid(),date:sel,time:v.h,clientId:v.c,barberId:v.b||"",service:v.s})});
 }
 
-function home(){if(rep)return informe();const r=ranges(),k=[["Hoy",sum(r.t,r.t)],["Semana",sum(r.w,r.t)],["Mes",sum(r.m,r.t)]];
+function home(){if(rep)return informe();
  const last=db.movs.filter(m=>m.date===hd);
- return`<h1>Caja</h1>${licChip()}<div class="grid">${k.map(x=>`<div class="c"><div class="mu">${x[0]}</div><div class="big">${money(x[1])}</div></div>`).join("")}</div>
- <div class="c row"><div><div class="mu">Precio del corte</div><div class="big">${db.cfg.price?money(db.cfg.price):"Sin definir"}</div></div><button class="b s w" onclick="price()">Editar</button></div>
- <button class="b s" style="margin-top:10px" onclick="rep=true;render()">📊 Informe de ventas</button>
- <h2>Registrar</h2><button class="b" onclick="newMov('cobro')">+ Cobro</button>
- <div class="row" style="margin-top:8px"><button class="b s" onclick="newMov('fiado')">Fiado</button><button class="b s" onclick="newMov('pago')">Pago deuda</button></div>
- <h2>Movimientos del día</h2><input type="date" value="${hd}" onchange="hd=this.value||today();render()">${last.map(m=>`<div class="c row"><div>${esc(m.concept)}<div class="mu">${cname(m.clientId)} · ${m.date.split("-").reverse().join("/")}${m.type==="fiado"?" · fiado":""}${dn(m)}${m.barberId?" · ✂ "+esc(bname(m.barberId)):""}</div></div><div style="text-align:right"><b class="${m.type==="fiado"?"red":"grn"}">${money(m.amount)}</b><div style="margin-top:6px"><button class="b s w" onclick="editMov('${m.id}')">Editar</button> <button class="b s w" onclick="delMov('${m.id}')">✕</button></div></div></div>`).join("")||'<p class="mu">Sin movimientos este día.</p>'}`}
+ return`<h1>Caja</h1>${licChip()}<button class="b" onclick="newMov('cobro')">✂ Nuevo corte</button>
+ <button class="b s" style="margin-top:8px" onclick="newMov('pago')">Cobrar saldo pendiente</button>
+ <button class="b s" style="margin-top:8px" onclick="rep=true;render()">📊 Informe de ventas</button>
+ <h2>Movimientos del día</h2><input type="date" value="${hd}" onchange="hd=this.value||today();render()">${last.map(m=>`<div class="c row"><div>${esc(m.concept)}<div class="mu">${cname(m.clientId)} · ${m.date.split("-").reverse().join("/")}· ${payLbl(m)}${dn(m)}${m.barberId?" · ✂ "+esc(bname(m.barberId)):""}</div></div><div style="text-align:right"><b class="${m.type==="fiado"?"red":"grn"}">${money(m.amount)}</b><div style="margin-top:6px"><button class="b s w" onclick="editMov('${m.id}')">Editar</button> <button class="b s w" onclick="delMov('${m.id}')">✕</button></div></div></div>`).join("")||'<p class="mu">Sin movimientos este día.</p>'}`}
 
 function agenda(){const y=cm.getFullYear(),mo=cm.getMonth(),first=(new Date(y,mo,1).getDay()+6)%7,n=new Date(y,mo+1,0).getDate();
  let cells="LMXJVSD".split("").map(d=>`<span class="mu">${d}</span>`).join("")+"<span></span>".repeat(first);
@@ -123,9 +135,9 @@ function clients(){
   <div class="c mu">📞 ${esc(c.phone)||"-"}<br>📍 ${esc(c.address)||"-"}<br>🎂 ${c.bday?c.bday.split("-").reverse().join("/"):"-"}</div>
   <div class="grid"><div class="c"><div class="mu">Gastó</div><div class="big">${money(spent(c.id))}</div></div><div class="c"><div class="mu">${d>0?"Debe":"Saldo"}</div><div class="big ${d>0?"red":"grn"}">${money(Math.abs(d))}</div></div><div class="c"><div class="mu">Puntos</div><div class="big grn">⭐ ${pts(c)}</div></div></div>
   ${ptsCard(c)}
-  <h2>Cuenta corriente</h2><div class="row"><button class="b s" onclick="newMov('fiado','${c.id}')">+ Fiado</button><button class="b s" onclick="newMov('pago','${c.id}')">+ Pago</button></div>
+  <h2>Cuenta corriente</h2><div class="row"><button class="b s" onclick="newMov('cobro','${c.id}')">Nuevo corte</button><button class="b s" onclick="newMov('pago','${c.id}')">Cobrar saldo pendiente</button></div>
   <button class="b s" style="margin-top:8px" onclick="newClient(cl('${c.id}'))">Editar datos</button>
-  ${ms.map(m=>`<div class="c row" style="margin-top:8px"><div>${esc(m.concept)}<div class="mu">${m.date.split("-").reverse().join("/")} · ${{cobro:"cobrado",fiado:"a cuenta",pago:"pago"}[m.type]}${dn(m)}</div></div><b class="${m.type==="fiado"?"red":"grn"}">${m.type==="pago"?"-":""}${money(m.amount)}</b></div>`).join("")}`}
+  ${ms.map(m=>`<div class="c row" style="margin-top:8px"><div>${esc(m.concept)}<div class="mu">${m.date.split("-").reverse().join("/")} · ${payLbl(m)}${dn(m)}</div></div><b class="${m.type==="fiado"?"red":"grn"}">${m.type==="pago"?"-":""}${money(m.amount)}</b></div>`).join("")}`}
  return`<h1>Clientes</h1><button class="b" onclick="newClient()">+ Nuevo cliente</button><h2>${db.clients.length} registrados</h2>`+
  [...db.clients].sort((a,b)=>a.name.localeCompare(b.name)).map(c=>{const d=debt(c.id);return`<div class="c row" onclick="openC='${c.id}';render()"><div>${esc(c.name)}<div class="mu">${esc(c.phone)}</div></div>${d>0?`<b class="red">${money(d)}</b>`:'<span class="mu">›</span>'}</div>`}).join("")}
 
@@ -138,14 +150,15 @@ async function dl(name,data){try{const u=URL.createObjectURL(new Blob([data],{ty
 const stamp=()=>today();
 function datos(){const n=db.movs.length;
  return`<h1>Datos</h1><div class="c mu">${db.clients.length} clientes · ${n} movimientos · ${db.turnos.length} turnos</div>
+ <h2>Lista de precios</h2><div class="c"><button class="b" onclick="priceForm()">+ Agregar precio</button>${db.prices.map(p=>`<div class="row" style="margin-top:10px"><div><b>${esc(p.name)}</b><div class="mu">${money(p.price)}${p.cut?"":" · no suma punto"}</div></div><div><button class="b s w" onclick="priceForm('${p.id}')">Editar</button> <button class="b s w" onclick="delPrice('${p.id}')">✕</button></div></div>`).join("")||'<p class="mu" style="margin-bottom:0">Todavía no cargaste precios. Agregá tus cortes y productos para elegirlos al cobrar.</p>'}</div>
  <h2>Suscripción</h2><div class="c"><div class="row"><span class="mu">Código de cliente</span><b>${lic.id}</b></div><div class="row" style="margin-top:6px"><span class="mu">${PUB?(left()>=0?"Activa hasta":"Venció el"):"Sin control de suscripción"}</span><b>${PUB?fd(validUntil()):""}</b></div>${PUB?`<div class="row" style="margin-top:6px"><span class="mu">Días restantes</span><b class="${left()<=5?"red":"grn"}">${Math.max(0,left())}</b></div>`:""}${PUB?`<button class="b s" style="margin-top:10px" onclick="renewForm()">Ingresar clave de renovación</button>`:""}</div>
- <h2>Copia de seguridad</h2><div class="c"><p class="mu" style="margin-top:0">Los datos viven en este teléfono. Descargá una copia seguido y guardala en Drive o WhatsApp.</p><button class="b" onclick="backup()">Descargar copia completa</button></div>
- <div class="c"><p class="mu" style="margin-top:0">Recupera los datos desde una copia descargada antes (por ejemplo, de la versión anterior o si cambiás de celular).</p><input type="file" accept=".json,application/json" onchange="restore(this)"></div>
+ <h2>Copia de seguridad</h2><div class="c"><p class="mu" style="margin-top:0">Los datos viven en este teléfono. La copia incluye todo: clientes, ventas, turnos, barberos, precios y configuración. Guardala en Drive o mandatela por WhatsApp.<br><b>${db.cfg.lastBackup?"Última copia: "+fd(db.cfg.lastBackup):"Todavía no hiciste ninguna copia."}</b></p><button class="b" onclick="backup()">Descargar copia completa</button></div>
+ <div class="c"><p class="mu" style="margin-top:0">Si cambiás de celular o se rompió el tuyo: instalá la app, entrá a Datos y elegí acá tu archivo de copia. Recupera todo. (La suscripción es por celular: el nuevo tiene otro código de cliente y necesita una clave nueva.)</p><input type="file" accept=".json,application/json" onchange="restore(this)"></div>
  <h2>Caja en Excel</h2><div class="c"><p class="mu" style="margin-top:0">Todos los movimientos en un archivo CSV que se abre con Excel.</p><button class="b s" onclick="csv()">Descargar caja (CSV)</button></div>
  <h2>Archivar meses viejos</h2><div class="c"><p class="mu" style="margin-top:0">Descarga los cobros y turnos antiguos y los saca de la app para liberar espacio. Las deudas, el gasto y los cortes de cada cliente se conservan. Los totales de caja de esos meses dejan de verse.</p><button class="b s" onclick="archive()">Archivar</button></div>`}
-const backup=()=>dl("barberia-copia-"+stamp()+".json",JSON.stringify({version:1,fecha:stamp(),db},null,1));
+const backup=()=>dl("barberia-copia-"+stamp()+".json",JSON.stringify({version:1,fecha:stamp(),db},null,1)).then(ok=>{if(ok){db.cfg.lastBackup=today();save();render()}});
 const q=t=>'"'+String(t||"").replace(/"/g,'""')+'"';
-function csv(){const rows=[["Fecha","Cliente","Concepto","Tipo","Precio","Descuento","Total","Barbero"]].concat([...db.movs].sort((a,b)=>a.date.localeCompare(b.date)).map(m=>[m.date,cname(m.clientId),m.concept,m.type,m.gross||m.amount,(m.gross||m.amount)-m.amount,m.amount,bname(m.barberId)]));
+function csv(){const rows=[["Fecha","Cliente","Concepto","Tipo","Forma de pago","Precio","Descuento","Total","Barbero"]].concat([...db.movs].sort((a,b)=>a.date.localeCompare(b.date)).map(m=>[m.date,cname(m.clientId),m.concept,m.type==="pago"?"Cobro de saldo":"Venta",PL[pm(m)],m.gross||m.amount,(m.gross||m.amount)-m.amount,m.amount,bname(m.barberId)]));
  dl("caja-"+stamp()+".csv","\ufeff"+rows.map(r=>r.map(q).join(";")).join("\n"))}
 function archive(){
  form("Archivar meses viejos",[{k:"m",l:"Archivar todo lo anterior a",o:[["24","Hace más de 24 meses"],["12","Hace más de 12 meses"],["6","Hace más de 6 meses"]],v:"12"}],v=>{
@@ -158,7 +171,7 @@ function archive(){
    om.forEach(m=>{const c=cl(m.clientId);if(!c)return;c.ab=c.ab||{d:0,s:0,c:0};if(m.type==="fiado")c.ab.d+=m.amount;if(m.type==="pago")c.ab.d-=m.amount;if(m.type!=="pago")c.ab.s+=m.amount;if(m.corte)c.ab.c++});
    db.movs=db.movs.filter(m=>m.date>=cut);db.turnos=db.turnos.filter(t=>t.date>=cut);save();render();alert("Listo: datos archivados.")});
   return true})}
-function restore(inp){const f=inp.files[0];if(!f)return;const r=new FileReader();r.onload=()=>{try{const x=JSON.parse(r.result);if(!x.db||!x.db.clients)throw 0;if(!confirm("Se reemplazarán TODOS los datos actuales por los de la copia ("+x.db.clients.length+" clientes). ¿Continuar?"))return;db=Object.assign({clients:[],movs:[],turnos:[],barbers:[],shifts:[],cfg:{goal:5,benefit:"Corte gratis",price:0}},x.db);save();render();alert("Copia restaurada")}catch(e){alert("El archivo no es una copia válida")}};r.readAsText(f);inp.value=""}
+function restore(inp){const f=inp.files[0];if(!f)return;const r=new FileReader();r.onload=()=>{try{const x=JSON.parse(r.result);if(!x.db||!x.db.clients)throw 0;if(!confirm("Se reemplazarán TODOS los datos actuales por los de la copia ("+x.db.clients.length+" clientes). ¿Continuar?"))return;db=Object.assign({clients:[],movs:[],turnos:[],barbers:[],shifts:[],prices:[],cfg:{goal:5,benefit:"Corte gratis",price:0}},x.db);save();render();alert("Copia restaurada")}catch(e){alert("El archivo no es una copia válida")}};r.readAsText(f);inp.value=""}
 const bname=id=>(db.barbers.find(b=>b.id===id)||{}).name||"";
 const barberOpts=cur=>[["","Sin asignar"],...db.barbers.filter(b=>!b.off||b.id===cur).map(b=>[b.id,b.name])];
 const fd=d=>d.split("-").reverse().join("/");
@@ -190,7 +203,7 @@ function equipo(){const r=ranges(),P=[["Hoy",r.t],["Semana",r.w],["Mes",r.m]];
   return`<button class="bk" onclick="openB=null;render()">‹ Equipo</button><h1>✂ ${esc(b.name)}</h1>
   <button class="b" onclick="clock('${b.id}')">${o?"Registrar SALIDA":"Registrar ENTRADA"}</button>
   <div class="mu" style="margin-top:6px">${o?"En turno desde las "+o.in+(o.date!==today()?" del "+fd(o.date):""):"Fuera de turno"}</div>
-  <h2>Dinero cobrado</h2><div class="grid">${P.map(p=>{const c=bsum(b.id,p[1],r.t,"cobro"),f=bsum(b.id,p[1],r.t,"fiado");return`<div class="c"><div class="mu">${p[0]}</div><div class="big">${money(c)}</div>${f?`<div class="mu">+${money(f)} fiado</div>`:""}</div>`}).join("")}</div>
+  <h2>Dinero cobrado</h2><div class="grid">${P.map(p=>{const c=bsum(b.id,p[1],r.t,"cobro"),f=bsum(b.id,p[1],r.t,"fiado");return`<div class="c"><div class="mu">${p[0]}</div><div class="big">${money(c)}</div>${f?`<div class="mu">+${money(f)} cta. cte.</div>`:""}</div>`}).join("")}</div>
   <h2>Horas trabajadas</h2><div class="grid">${P.map(p=>`<div class="c"><div class="mu">${p[0]}</div><div class="big">${fh(hrs(b.id,p[1],r.t))}</div></div>`).join("")}</div>
   <h2>Pago</h2><div class="c row"><div><b>${payTxt(b)}</b><div class="mu">Se calcula con las horas o las ventas</div></div><button class="b s w" onclick="payForm('${b.id}')">Editar</button></div>${b.pay?`<div class="grid">${P.map(p=>`<div class="c"><div class="mu">A pagar ${p[0].toLowerCase()}</div><div class="big">${money(payOf(b,p[1],r.t))}</div></div>`).join("")}</div>`:""}
   <h2>Fichadas</h2><button class="b s" onclick="shiftForm('${b.id}')">+ Cargar fichada manual</button>
@@ -225,36 +238,41 @@ function rango(q=rp){const d=new Date(q.d+"T12:00:00");let a=new Date(d),b=new D
  if(q.p==="m"){a=new Date(d.getFullYear(),d.getMonth(),1);b=new Date(d.getFullYear(),d.getMonth()+1,0)}
  return[iso(a),iso(b)]}
 const sm=(a,f)=>a.reduce((t,m)=>t+f(m),0);
-function reporte(){const[f,t]=rango(),ms=db.movs.filter(m=>m.date>=f&&m.date<=t).sort((a,b)=>a.date.localeCompare(b.date)),ven=ms.filter(m=>m.type!=="pago");
+function reporte(){const f=rp.f,t=rp.t,ms=db.movs.filter(m=>m.date>=f&&m.date<=t).sort((a,b)=>a.date.localeCompare(b.date)),ven=ms.filter(m=>m.type!=="pago");
  const cob=sm(ms.filter(m=>m.type==="cobro"),m=>m.amount),fia=sm(ms.filter(m=>m.type==="fiado"),m=>m.amount),pag=sm(ms.filter(m=>m.type==="pago"),m=>m.amount),desc=sm(ven,m=>m.gross&&m.gross>m.amount?m.gross-m.amount:0);
  const ids=[...new Set([...db.barbers.filter(b=>!b.off).map(b=>b.id),...ven.map(m=>m.barberId||"")])];
  const byB=ids.map(id=>{const v=ven.filter(m=>(m.barberId||"")===id);return{n:id?(bname(id)||"Barbero eliminado"):"Sin asignar",q:v.length,c:sm(v.filter(m=>m.type==="cobro"),m=>m.amount),f:sm(v.filter(m=>m.type==="fiado"),m=>m.amount)}}).filter(b=>b.q||b.n!=="Sin asignar");
- return{f,t,ms,ven,cob,fia,pag,desc,byB}}
-function informe(){const R=reporte(),lbl=rp.p==="d"?fd(R.f):fd(R.f)+" al "+fd(R.t);
+ const ing=ms.filter(m=>m.type!=="fiado"),efe=sm(ing.filter(m=>pm(m)==="efe"),m=>m.amount),tra=sm(ing.filter(m=>pm(m)==="tra"),m=>m.amount);
+ return{f,t,ms,ven,cob,fia,pag,desc,byB,efe,tra}}
+function setP(p){const r=rango({p,d:today()});rp.f=r[0];rp.t=r[1];render()}
+function informe(){const R=reporte(),lbl=R.f===R.t?fd(R.f):fd(R.f)+" al "+fd(R.t);
  return`<button class="bk" onclick="rep=false;render()">‹ Caja</button><h1>Informe de ventas</h1>
- <div class="row">${[["d","Día"],["w","Semana"],["m","Mes"]].map(x=>`<button class="b ${rp.p===x[0]?"":"s"}" onclick="rp.p='${x[0]}';render()">${x[1]}</button>`).join("")}</div>
- <label style="display:block;margin-top:10px">Fecha de referencia</label><input type="date" value="${rp.d}" onchange="rp.d=this.value||today();render()">
+ <div class="row">${[["d","Hoy"],["w","Esta semana"],["m","Este mes"]].map(x=>`<button class="b s" onclick="setP('${x[0]}')">${x[1]}</button>`).join("")}</div>
+ <div class="row" style="margin-top:10px;align-items:flex-start"><div style="flex:1"><label>Desde</label><input type="date" value="${rp.f}" onchange="rp.f=this.value||rp.f;if(rp.f>rp.t)rp.t=rp.f;render()"></div><div style="flex:1"><label>Hasta</label><input type="date" value="${rp.t}" onchange="rp.t=this.value||rp.t;if(rp.t<rp.f)rp.f=rp.t;render()"></div></div>
  <div class="c"><div class="mu">${lbl}</div><div class="big" style="font-size:28px">${money(R.cob+R.fia)}</div><div class="mu">Total vendido · ${R.ven.length} venta${R.ven.length==1?"":"s"}</div></div>
- <div class="grid"><div class="c"><div class="mu">Cobrado</div><div class="big">${money(R.cob)}</div></div><div class="c"><div class="mu">Fiado</div><div class="big red">${money(R.fia)}</div></div><div class="c"><div class="mu">Pagos deuda</div><div class="big">${money(R.pag)}</div></div></div>
- <div class="c row" style="margin-top:8px"><span class="mu">Ingreso total en caja</span><b>${money(R.cob+R.pag)}</b></div>${R.desc?`<div class="mu">Descuentos otorgados: ${money(R.desc)}</div>`:""}
- <h2>Total por barbero</h2>${R.byB.map(b=>`<div class="c row"><div><b>✂ ${esc(b.n)}</b><div class="mu">${b.q} venta${b.q==1?"":"s"} · cobrado ${money(b.c)}${b.f?" · fiado "+money(b.f):""}</div></div><b>${money(b.c+b.f)}</b></div>`).join("")||'<p class="mu">Sin ventas en este período.</p>'}
+ <div class="grid"><div class="c"><div class="mu">Efectivo</div><div class="big">${money(R.efe)}</div></div><div class="c"><div class="mu">Transferencia</div><div class="big">${money(R.tra)}</div></div><div class="c"><div class="mu">A cta. cte.</div><div class="big red">${money(R.fia)}</div></div></div>
+ ${R.pag?`<div class="mu" style="margin-top:6px">Efectivo y transferencia incluyen ${money(R.pag)} de saldos pendientes cobrados.</div>`:""}
+ <div class="c row" style="margin-top:8px"><span class="mu">Ingreso total en caja</span><b>${money(R.efe+R.tra)}</b></div>${R.desc?`<div class="mu">Descuentos otorgados: ${money(R.desc)}</div>`:""}
+ <h2>Total por barbero</h2>${R.byB.map(b=>`<div class="c row"><div><b>✂ ${esc(b.n)}</b><div class="mu">${b.q} venta${b.q==1?"":"s"} · cobrado ${money(b.c)}${b.f?" · cta. cte. "+money(b.f):""}</div></div><b>${money(b.c+b.f)}</b></div>`).join("")||'<p class="mu">Sin ventas en este período.</p>'}
  <button class="b" style="margin-top:12px" onclick="exportXlsx()">Exportar a Excel</button>`}
-function exportXlsx(){const R=reporte(),H=t=>[t,1],$=n=>[n,2],B=n=>[n,3],lbl=rp.p==="d"?fd(R.f):fd(R.f)+" al "+fd(R.t),TY={cobro:"Cobrado",fiado:"A cuenta",pago:"Pago de deuda"};
- const res=[["Informe de ventas - Barbería"],["Período",{d:"Día",w:"Semana",m:"Mes"}[rp.p]],["Desde",fd(R.f)],["Hasta",fd(R.t)],[],[H("Concepto"),H("Monto")],["Total vendido (cobrado + fiado)",B(R.cob+R.fia)],["Cobrado en el momento",$(R.cob)],["Servicios a cuenta (fiado)",$(R.fia)],["Pagos de deuda recibidos",$(R.pag)],["Ingreso total en caja",B(R.cob+R.pag)],["Descuentos otorgados",$(R.desc)],["Cantidad de ventas",R.ven.length]];
- const bb=[[H("Barbero"),H("Ventas"),H("Cobrado"),H("Fiado"),H("Total vendido")],...R.byB.map(b=>[b.n,b.q,$(b.c),$(b.f),$(b.c+b.f)]),["TOTAL",R.ven.length,B(R.cob),B(R.fia),B(R.cob+R.fia)]];
- const det=[[H("Fecha"),H("Cliente"),H("Barbero"),H("Concepto"),H("Tipo"),H("Precio"),H("Descuento"),H("Total")],...R.ms.map(m=>[fd(m.date),cname(m.clientId),bname(m.barberId),m.concept,TY[m.type],$(m.gross||m.amount),$((m.gross||m.amount)-m.amount),$(m.amount)])];
- dl("informe-ventas-"+{d:"dia",w:"semana",m:"mes"}[rp.p]+"-"+R.f+".xlsx",xlsxBlob([["Resumen",res],["Por barbero",bb],["Detalle",det]]))}
+function exportXlsx(){const R=reporte(),H=t=>[t,1],$=n=>[n,2],B=n=>[n,3];
+ const res=[["Informe de ventas - Barbería"],["Desde",fd(R.f)],["Hasta",fd(R.t)],[],[H("Concepto"),H("Monto")],["Total vendido (cobrado + cuenta corriente)",B(R.cob+R.fia)],["Efectivo (incluye saldos cobrados)",$(R.efe)],["Transferencia (incluye saldos cobrados)",$(R.tra)],["Ventas a cuenta corriente (por cobrar)",$(R.fia)],["Saldos pendientes cobrados",$(R.pag)],["Ingreso total en caja",B(R.efe+R.tra)],["Descuentos otorgados",$(R.desc)],["Cantidad de ventas",R.ven.length]];
+ const bb=[[H("Barbero"),H("Ventas"),H("Cobrado"),H("Cuenta corriente"),H("Total vendido")],...R.byB.map(b=>[b.n,b.q,$(b.c),$(b.f),$(b.c+b.f)]),["TOTAL",R.ven.length,B(R.cob),B(R.fia),B(R.cob+R.fia)]];
+ const det=[[H("Fecha"),H("Cliente"),H("Barbero"),H("Concepto"),H("Tipo"),H("Forma de pago"),H("Precio"),H("Descuento"),H("Total")],...R.ms.map(m=>[fd(m.date),cname(m.clientId),bname(m.barberId),m.concept,m.type==="pago"?"Cobro de saldo":"Venta",PL[pm(m)],$(m.gross||m.amount),$((m.gross||m.amount)-m.amount),$(m.amount)])];
+ dl("informe-ventas-"+R.f+"_a_"+R.t+".xlsx",xlsxBlob([["Resumen",res],["Por barbero",bb],["Detalle",det]]))}
 
 function editMov(id){const m=db.movs.find(x=>x.id===id);if(!m)return;const pg=m.type==="pago",g=m.gross||m.amount,df=g-m.amount;
- form("Editar movimiento",[{k:"c",l:"Cliente",o:clientOpts(m.type==="cobro"),v:m.clientId||""},{k:"d",l:"Concepto",v:m.concept},
+ form("Editar movimiento",[{k:"c",l:"Cliente",s:1,o:clientOpts(!pg),v:m.clientId||""},{k:"d",l:"Concepto",v:m.concept},
   ...(!pg&&db.barbers.length?[{k:"b",l:"Barbero",o:barberOpts(m.barberId),v:m.barberId||""}]:[]),
   {k:"a",l:pg?"Monto":"Precio",t:"number",v:g},
   ...(!pg?[{k:"dt2",l:"Descuento",o:[["n","Sin descuento"],["p","Porcentaje (%)"],["m","Monto ($)"]],v:df>0?"m":"n"},{k:"dv",l:"Valor del descuento",t:"number",v:df>0?df:""}]:[]),
+  {k:"p",l:"Forma de pago",o:pg?[["efe","Efectivo"],["tra","Transferencia"]]:[["efe","Efectivo"],["tra","Transferencia"],["cc","Cuenta corriente"]],v:pm(m)},
   {k:"dt",l:"Fecha",t:"date",v:m.date},...(!pg?[{k:"cut",l:"¿Cuenta como corte para puntos?",o:[["1","Sí"],["0","No"]],v:m.corte?"1":"0"}]:[])],v=>{
   const a=parseFloat(v.a);if(!a||a<=0){alert("Ingresá un monto");return false}
-  if(m.type!=="cobro"&&!v.c){alert("Elegí un cliente");return false}
+  const cc=!pg&&v.p==="cc";if((pg||cc)&&!v.c){alert("Elegí un cliente");return false}
   Object.assign(m,{clientId:v.c,concept:v.d,amount:pg?a:calc(v),gross:a,date:v.dt||m.date});
-  if(!pg){if(v.b!==undefined)m.barberId=v.b;m.corte=v.cut==="1"&&!!v.c}},pg?null:calc)}
+  if(!pg){m.type=cc?"fiado":"cobro";if(v.b!==undefined)m.barberId=v.b;m.corte=v.cut==="1"&&!!v.c}
+  if(cc)delete m.pay;else m.pay=v.p},pg?null:calc)}
 function delMov(id){const m=db.movs.find(x=>x.id===id);if(m&&confirm("¿Eliminar "+m.concept+" por "+money(m.amount)+"? No se puede deshacer.")){db.movs=db.movs.filter(x=>x.id!==id);save();render()}}
 const payTxt=b=>!b.pay?"Sin definir":b.pay.mode==="hour"?money(b.pay.rate)+" por hora":b.pay.rate+"% de las ventas";
 const payOf=(b,f,t)=>!b.pay?0:b.pay.mode==="hour"?hrs(b.id,f,t)/60*b.pay.rate:(bsum(b.id,f,t,"cobro")+bsum(b.id,f,t,"fiado"))*b.pay.rate/100;
@@ -298,8 +316,18 @@ async function activate(tok){const m=$("#lm"),say=t=>{if(m)m.textContent=t;else 
 const lockHtml=()=>`<div style="text-align:center;margin-top:8vh"><div style="font-size:48px">🔒</div><h1>${lockMsg?"Fecha incorrecta":"Suscripción vencida"}</h1><p class="mu">${lockMsg||"Para seguir usando la app, pedí tu clave de activación. Tus datos están guardados y no se pierden."}</p><div class="c"><div class="mu">Tu código de cliente</div><div class="big" style="font-size:30px;letter-spacing:4px">${lic.id}</div></div><div style="text-align:left"><label>Clave de activación</label><input id="lk" placeholder="Pegá la clave acá" autocapitalize="off" autocomplete="off"></div><button class="b" onclick="activate($('#lk').value)">Activar</button><p id="lm" class="red"></p></div>`;
 const licTxt=()=>left()<0?"vencida":left()==0?"vence hoy":"quedan "+left()+" día"+(left()==1?"":"s");
 const licChip=()=>PUB?`<div class="mu" style="margin:-6px 0 12px">🔑 Licencia: <b class="${left()<=5?"red":"grn"}">${licTxt()}</b></div>`:"";
-const banner=()=>PUB&&left()>=0&&left()<=5?`<div class="c" style="background:var(--acl)">⏳ Tu suscripción vence ${left()==0?"hoy":"en "+left()+" día"+(left()==1?"":"s")}. Pedí tu clave para renovar.</div>`:"";
+const banner=()=>banner0()+bkBanner();
+const bkBanner=()=>{if(tab!=="home"||!(db.clients.length||db.movs.length))return"";const l=db.cfg.lastBackup;if(l&&dys(l,today())<7)return"";return`<div class="c" style="background:var(--acl)" onclick="tab='dat';render()">💾 ${l?"Hace "+dys(l,today())+" días que no hacés una copia de seguridad.":"Todavía no hiciste ninguna copia de seguridad."} Tocá acá para hacerla.</div>`};
+const banner0=()=>PUB&&left()>=0&&left()<=5?`<div class="c" style="background:var(--acl)">⏳ Tu suscripción vence ${left()==0?"hoy":"en "+left()+" día"+(left()==1?"":"s")}. Pedí tu clave para renovar.</div>`:"";
 const renewForm=()=>form("Renovar suscripción",[{k:"k",l:"Clave de activación"}],v=>{activate(v.k)});
+const PL={efe:"Efectivo",tra:"Transferencia",cc:"Cuenta corriente"};
+const pm=m=>m.type==="fiado"?"cc":(m.pay||"efe");
+const payLbl=m=>(m.type==="pago"?"cobro de saldo · ":"")+PL[pm(m)].toLowerCase();
+function priceForm(id){const p=db.prices.find(x=>x.id===id);
+ form(p?"Editar precio":"Nuevo precio",[{k:"n",l:"Producto o corte",v:p&&p.name},{k:"p",l:"Precio",t:"number",v:p&&p.price},{k:"c",l:"¿Suma punto (cuenta como corte)?",o:[["1","Sí"],["0","No"]],v:p&&!p.cut?"0":"1"}],v=>{
+  const pr=parseFloat(v.p);if(!v.n||isNaN(pr)||pr<0){alert("Completá el nombre y el precio");return false}
+  if(p)Object.assign(p,{name:v.n,price:pr,cut:v.c==="1"});else db.prices.push({id:uid(),name:v.n,price:pr,cut:v.c==="1"})})}
+function delPrice(id){const p=db.prices.find(x=>x.id===id);if(p&&confirm("¿Eliminar "+p.name+" de la lista de precios? Las ventas ya registradas no cambian.")){db.prices=db.prices.filter(x=>x.id!==id);save();render()}}
 function cfg(){form("Configurar beneficio",[{k:"g",l:"Puntos necesarios por beneficio",t:"number",v:db.cfg.goal},{k:"b",l:"Beneficio",v:db.cfg.benefit}],v=>{const g=parseInt(v.g);if(!g||g<1)return false;db.cfg=Object.assign(db.cfg,{goal:g,benefit:v.b||"Beneficio"})})}
 function redeem(id){if(confirm("¿Canjear "+db.cfg.benefit+" para "+cname(id)+"?")){{const c=cl(id);c.pu=(c.pu!=null?c.pu:(c.redeemed||0)*db.cfg.goal)+db.cfg.goal;c.redeemed=(c.redeemed||0)+1}save();render()}}
 
