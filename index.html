@@ -1,0 +1,282 @@
+<!DOCTYPE html>
+<html lang="es"><head><meta charset="utf-8"><title>Barbería</title>
+<link rel="manifest" href="manifest.webmanifest"><meta name="theme-color" content="#2f6f62"><link rel="icon" href="icon-192.png"><link rel="apple-touch-icon" href="icon-192.png">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<style>
+:root{--bg:#f7f6f3;--card:#fff;--tx:#222;--mu:#8a8a85;--ac:#2f6f62;--acl:#e3efec;--bd:#e8e6e1;--rd:#c0453a;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#171716;--card:#222221;--tx:#eee;--mu:#999;--ac:#6fbfae;--acl:#27403a;--bd:#333;--rd:#e5786d}}
+:root[data-theme="dark"]{--bg:#171716;--card:#222221;--tx:#eee;--mu:#999;--ac:#6fbfae;--acl:#27403a;--bd:#333;--rd:#e5786d}
+*{box-sizing:border-box}html{scroll-padding-top:env(safe-area-inset-top,0px)}
+body{margin:0;background:var(--bg);color:var(--tx);font:16px system-ui,-apple-system,Segoe UI,sans-serif;max-width:480px;margin:auto;padding:16px 16px 96px}
+h1{font-size:22px;margin:8px 0 14px}h2{font-size:15px;color:var(--mu);font-weight:600;margin:18px 0 8px}
+.c{background:var(--card);border:1px solid var(--bd);border-radius:14px;padding:14px;margin-bottom:10px}
+.row{display:flex;justify-content:space-between;align-items:center;gap:8px}.mu{color:var(--mu);font-size:13px}
+.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}.grid .c{text-align:center;padding:12px 6px;margin:0}
+.big{font-size:19px;font-weight:700}.red{color:var(--rd)}.grn{color:var(--ac)}
+button,input,select{font:inherit;color:var(--tx)}
+.b{background:var(--ac);color:#fff;border:0;border-radius:12px;padding:12px 16px;width:100%;font-weight:600}
+.b.s{background:var(--acl);color:var(--ac)}.b.w{width:auto;padding:8px 12px;font-size:14px}
+input,select{width:100%;padding:12px;border:1px solid var(--bd);border-radius:10px;background:var(--bg);margin:4px 0 10px}
+label{font-size:13px;color:var(--mu)}
+nav{position:fixed;bottom:0;left:0;right:0;background:var(--card);border-top:1px solid var(--bd);display:flex;justify-content:center;padding-bottom:env(safe-area-inset-bottom,0px)}
+nav div{display:flex;width:100%;max-width:480px}nav button{flex:1;background:none;border:0;padding:10px 0;font-size:12px;color:var(--mu)}nav button b{display:block;font-size:20px}nav .on{color:var(--ac);font-weight:700}
+.sh{position:fixed;inset:0;background:#0006;display:flex;align-items:flex-end;justify-content:center;z-index:9}
+.sh>div{background:var(--card);width:100%;max-width:480px;border-radius:18px 18px 0 0;padding:18px 16px calc(18px + env(safe-area-inset-bottom,0px));max-height:90%;overflow:auto}
+.cal{display:grid;grid-template-columns:repeat(7,1fr);gap:4px;text-align:center}.cal span{padding:9px 0;border-radius:10px;font-size:14px}
+.cal .d{background:var(--card);border:1px solid var(--bd)}.cal .t{border-color:var(--ac)}.cal .sel{background:var(--ac);color:#fff}.cal .has::after{content:"•";display:block;line-height:4px;font-size:16px}
+.bar{height:8px;background:var(--acl);border-radius:8px;overflow:hidden;margin:8px 0}.bar i{display:block;height:100%;background:var(--ac)}
+.bk{background:none;border:0;color:var(--ac);padding:0 0 8px;font-weight:600}
+</style></head><body>
+<div id="app"></div>
+<nav><div id="nav"></div></nav>
+<script>
+let db={clients:[],movs:[],turnos:[],barbers:[],shifts:[],cfg:{goal:5,benefit:"Corte gratis",price:0}};
+let DB=null,ready=false,status="",last={};
+function save(){try{localStorage.setItem("barberia",JSON.stringify(db));status="✓ Guardado en este teléfono"}catch(e){status="⚠ No se pudo guardar"}const el=$("#st");if(el)el.textContent=status}
+function load(){try{const l=JSON.parse(localStorage.getItem("barberia"));if(l)db=Object.assign(db,l)}catch(e){}
+ try{navigator.storage&&navigator.storage.persist&&navigator.storage.persist()}catch(e){}
+ status="✓ Guardado en este teléfono";ready=true;render()}
+const $=s=>document.querySelector(s);
+const iso=d=>d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");
+const today=()=>iso(new Date());
+const money=n=>"$"+Math.round(n).toLocaleString("es-AR");
+const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,5);
+const cl=id=>db.clients.find(c=>c.id===id);
+const cname=id=>cl(id)?cl(id).name:"Sin cliente";
+const esc=s=>String(s||"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const inc=m=>m.type!=="fiado";
+let tab="home",sel=today(),cm=new Date(),openC=null,openB=null,rep=false,rp={p:"d",d:today()},hd=today(),eqRep=false,hp={p:"d",d:today()};
+const tabs=[["home","💵","Caja"],["ag","📅","Turnos"],["cli","👤","Clientes"],["pts","⭐","Puntos"],["eq","👥","Equipo"],["dat","💾","Datos"]];
+
+function sum(from,to){return db.movs.filter(m=>inc(m)&&m.date>=from&&m.date<=to).reduce((a,m)=>a+m.amount,0)}
+function ranges(){const n=new Date(),t=iso(n),dow=(n.getDay()+6)%7,w=new Date(n);w.setDate(n.getDate()-dow);
+ return{t,w:iso(w),m:t.slice(0,8)+"01"}}
+const ab=id=>(cl(id)&&cl(id).ab)||{d:0,s:0,c:0};
+function debt(id){return ab(id).d+db.movs.filter(m=>m.clientId===id).reduce((a,m)=>a+(m.type==="fiado"?m.amount:m.type==="pago"?-m.amount:0),0)}
+function spent(id){return ab(id).s+db.movs.filter(m=>m.clientId===id&&m.type!=="pago").reduce((a,m)=>a+m.amount,0)}
+function cuts(id){return ab(id).c+db.movs.filter(m=>m.clientId===id&&m.corte).length}
+const pts=c=>cuts(c.id)-(c.pu!=null?c.pu:(c.redeemed||0)*db.cfg.goal);
+const avail=c=>Math.floor(pts(c)/db.cfg.goal);
+function ptsCard(c,name){const g=db.cfg.goal,p=pts(c),a=avail(c),r=p%g;
+ return`<div class="c">${name?`<div class="row"><b>${esc(c.name)}</b><span class="big grn">⭐ ${p}</span></div>`:`<div class="row"><span class="mu">Puntos acumulados</span><span class="big grn">⭐ ${p}</span></div>`}
+ <div class="bar"><i style="width:${a>0?100:r/g*100}%"></i></div>
+ ${a>0?`<div class="row"><span class="grn">🎁 Puede canjear ${a} beneficio${a>1?"s":""} (${esc(db.cfg.benefit)})</span><button class="b w" onclick="redeem('${c.id}')">Canjear</button></div>`:`<span class="mu">Faltan ${g-r} punto${g-r>1?"s":""} para: ${esc(db.cfg.benefit)}</span>`}
+ ${c.redeemed?`<div class="mu" style="margin-top:6px">Ya canjeó ${c.redeemed} vez${c.redeemed>1?"ces":""}</div>`:""}</div>`}
+
+function form(title,fields,ok,pv){
+ const h=document.createElement("div");h.className="sh";
+ h.innerHTML=`<div><div class="row"><b>${title}</b><button class="bk" id="x">Cerrar</button></div>`+fields.map(f=>`<label>${f.l}</label>`+(f.o?`<select id="f_${f.k}">${f.o.map(o=>`<option value="${o[0]}"${o[0]==f.v?" selected":""}>${o[1]}</option>`).join("")}</select>`:`<input id="f_${f.k}" type="${f.t||"text"}" value="${esc(f.v)}"${f.t==="number"?' inputmode="decimal"':""}>`)).join("")+(pv?`<div class="c row" style="background:var(--acl)"><span>Total a cobrar</span><b id="pv"></b></div>`:"")+`<button class="b" id="ok">Guardar</button></div>`;
+ const upd=()=>{if(!pv)return;const v={};fields.forEach(f=>v[f.k]=h.querySelector("#f_"+f.k).value.trim());$("#pv").textContent=money(pv(v))};
+ h.oninput=upd;h.onchange=upd;setTimeout(upd);
+ document.body.appendChild(h);
+ h.onclick=e=>{if(e.target===h)h.remove()};$("#x").onclick=()=>h.remove();
+ $("#ok").onclick=()=>{const v={};fields.forEach(f=>v[f.k]=h.querySelector("#f_"+f.k).value.trim());if(ok(v)!==false){h.remove();save();render()}};
+}
+const clientOpts=(blank)=>[...(blank?[["","Sin cliente"]]:[]),...db.clients.map(c=>[c.id,c.name])];
+
+const calc=v=>{const a=parseFloat(v.a)||0,d=parseFloat(v.dv)||0;return Math.max(0,v.dt2==="p"?a-a*d/100:v.dt2==="m"?a-d:a)};
+function newMov(type,clientId){
+ const T={cobro:"Registrar cobro",fiado:"Servicio a cuenta (fiado)",pago:"Pago de deuda"}[type];
+ form(T,[{k:"c",l:"Cliente",o:clientOpts(type==="cobro"),v:clientId||""},{k:"d",l:"Concepto",v:type==="pago"?"Pago":"Corte"},...(type!=="pago"&&db.barbers.some(b=>!b.off)?[{k:"b",l:"Barbero",o:barberOpts(),v:db.cfg.lastB||""}]:[]),{k:"a",l:type==="pago"?"Monto":"Precio",t:"number",v:type==="pago"?"":(db.cfg.price||"")},
+  ...(type!=="pago"?[{k:"dt2",l:"Descuento",o:[["n","Sin descuento"],["p","Porcentaje (%)"],["m","Monto ($)"]],v:"n"},{k:"dv",l:"Valor del descuento",t:"number"}]:[]),{k:"dt",l:"Fecha",t:"date",v:today()},
+  ...(type!=="pago"?[{k:"cut",l:"¿Cuenta como corte para puntos?",o:[["1","Sí"],["0","No"]],v:"1"}]:[])],v=>{
+  const a=parseFloat(v.a);if(!a||a<=0){alert("Ingresá un monto");return false}
+  if(type!=="cobro"&&!v.c){alert("Elegí un cliente");return false}
+  const fin=type==="pago"?a:calc(v);if(v.b!==undefined)db.cfg.lastB=v.b;
+  db.movs.push({id:uid(),date:v.dt||today(),clientId:v.c,barberId:v.b||"",concept:v.d,amount:fin,gross:a,type,corte:v.cut==="1"&&!!v.c})},type!=="pago"?calc:null);
+}
+function newClient(c){
+ form(c?"Editar cliente":"Nuevo cliente",[{k:"n",l:"Nombre",v:c&&c.name},{k:"p",l:"Teléfono",t:"tel",v:c&&c.phone},{k:"a",l:"Dirección",v:c&&c.address},{k:"b",l:"Cumpleaños",t:"date",v:c&&c.bday}],v=>{
+  if(!v.n){alert("Ingresá el nombre");return false}
+  if(c)Object.assign(c,{name:v.n,phone:v.p,address:v.a,bday:v.b});else db.clients.push({id:uid(),name:v.n,phone:v.p,address:v.a,bday:v.b,redeemed:0})});
+}
+function newTurno(){
+ if(!db.clients.length){alert("Primero cargá un cliente");return}
+ form("Nuevo turno · "+sel.split("-").reverse().join("/"),[{k:"c",l:"Cliente",o:clientOpts()},...(db.barbers.some(b=>!b.off)?[{k:"b",l:"Barbero",o:barberOpts(),v:db.cfg.lastB||""}]:[]),{k:"h",l:"Hora",t:"time",v:"10:00"},{k:"s",l:"Servicio",v:"Corte"}],v=>{
+  if(!v.h){alert("Elegí la hora");return false}
+  if(db.turnos.some(t=>t.date===sel&&t.time===v.h&&(t.barberId||"")===(v.b||""))&&!confirm("Ya hay un turno a esa hora. ¿Guardar igual?"))return false;
+  if(v.b!==undefined)db.cfg.lastB=v.b;db.turnos.push({id:uid(),date:sel,time:v.h,clientId:v.c,barberId:v.b||"",service:v.s})});
+}
+
+function home(){if(rep)return informe();const r=ranges(),k=[["Hoy",sum(r.t,r.t)],["Semana",sum(r.w,r.t)],["Mes",sum(r.m,r.t)]];
+ const last=db.movs.filter(m=>m.date===hd);
+ return`<h1>Caja</h1><div class="grid">${k.map(x=>`<div class="c"><div class="mu">${x[0]}</div><div class="big">${money(x[1])}</div></div>`).join("")}</div>
+ <div class="c row"><div><div class="mu">Precio del corte</div><div class="big">${db.cfg.price?money(db.cfg.price):"Sin definir"}</div></div><button class="b s w" onclick="price()">Editar</button></div>
+ <button class="b s" style="margin-top:10px" onclick="rep=true;render()">📊 Informe de ventas</button>
+ <h2>Registrar</h2><button class="b" onclick="newMov('cobro')">+ Cobro</button>
+ <div class="row" style="margin-top:8px"><button class="b s" onclick="newMov('fiado')">Fiado</button><button class="b s" onclick="newMov('pago')">Pago deuda</button></div>
+ <h2>Movimientos del día</h2><input type="date" value="${hd}" onchange="hd=this.value||today();render()">${last.map(m=>`<div class="c row"><div>${esc(m.concept)}<div class="mu">${cname(m.clientId)} · ${m.date.split("-").reverse().join("/")}${m.type==="fiado"?" · fiado":""}${dn(m)}${m.barberId?" · ✂ "+esc(bname(m.barberId)):""}</div></div><div style="text-align:right"><b class="${m.type==="fiado"?"red":"grn"}">${money(m.amount)}</b><div style="margin-top:6px"><button class="b s w" onclick="editMov('${m.id}')">Editar</button> <button class="b s w" onclick="delMov('${m.id}')">✕</button></div></div></div>`).join("")||'<p class="mu">Sin movimientos este día.</p>'}`}
+
+function agenda(){const y=cm.getFullYear(),mo=cm.getMonth(),first=(new Date(y,mo,1).getDay()+6)%7,n=new Date(y,mo+1,0).getDate();
+ let cells="LMXJVSD".split("").map(d=>`<span class="mu">${d}</span>`).join("")+"<span></span>".repeat(first);
+ for(let d=1;d<=n;d++){const s=iso(new Date(y,mo,d));cells+=`<span class="d ${s===today()?"t":""} ${s===sel?"sel":""} ${db.turnos.some(t=>t.date===s)?"has":""}" onclick="sel='${s}';render()">${d}</span>`}
+ const ts=db.turnos.filter(t=>t.date===sel).sort((a,b)=>a.time.localeCompare(b.time));
+ const mn=cm.toLocaleDateString("es-AR",{month:"long",year:"numeric"});
+ return`<h1>Turnos</h1><div class="row" style="margin-bottom:10px"><button class="b s w" onclick="cm=new Date(${y},${mo-1},1);render()">‹</button><b style="text-transform:capitalize">${mn}</b><button class="b s w" onclick="cm=new Date(${y},${mo+1},1);render()">›</button></div><div class="cal">${cells}</div>
+ <h2>${sel.split("-").reverse().join("/")}</h2>${ts.map(t=>`<div class="c row"><div><b>${t.time}</b> · ${esc(cname(t.clientId))}<div class="mu">${esc(t.service)}${t.barberId?" · ✂ "+esc(bname(t.barberId)):""}</div></div><button class="b s w" onclick="db.turnos=db.turnos.filter(x=>x.id!=='${t.id}');save();render()">Quitar</button></div>`).join("")||'<p class="mu">Sin turnos este día.</p>'}
+ <button class="b" onclick="newTurno()">+ Reservar turno</button>`}
+
+function clients(){
+ if(openC){const c=cl(openC);if(!c){openC=null;return clients()}const d=debt(c.id),ms=db.movs.filter(m=>m.clientId===c.id).sort((a,b)=>b.date.localeCompare(a.date));
+  return`<button class="bk" onclick="openC=null;render()">‹ Clientes</button><h1>${esc(c.name)}</h1>
+  <div class="c mu">📞 ${esc(c.phone)||"-"}<br>📍 ${esc(c.address)||"-"}<br>🎂 ${c.bday?c.bday.split("-").reverse().join("/"):"-"}</div>
+  <div class="grid"><div class="c"><div class="mu">Gastó</div><div class="big">${money(spent(c.id))}</div></div><div class="c"><div class="mu">${d>0?"Debe":"Saldo"}</div><div class="big ${d>0?"red":"grn"}">${money(Math.abs(d))}</div></div><div class="c"><div class="mu">Puntos</div><div class="big grn">⭐ ${pts(c)}</div></div></div>
+  ${ptsCard(c)}
+  <h2>Cuenta corriente</h2><div class="row"><button class="b s" onclick="newMov('fiado','${c.id}')">+ Fiado</button><button class="b s" onclick="newMov('pago','${c.id}')">+ Pago</button></div>
+  <button class="b s" style="margin-top:8px" onclick="newClient(cl('${c.id}'))">Editar datos</button>
+  ${ms.map(m=>`<div class="c row" style="margin-top:8px"><div>${esc(m.concept)}<div class="mu">${m.date.split("-").reverse().join("/")} · ${{cobro:"cobrado",fiado:"a cuenta",pago:"pago"}[m.type]}${dn(m)}</div></div><b class="${m.type==="fiado"?"red":"grn"}">${m.type==="pago"?"-":""}${money(m.amount)}</b></div>`).join("")}`}
+ return`<h1>Clientes</h1><button class="b" onclick="newClient()">+ Nuevo cliente</button><h2>${db.clients.length} registrados</h2>`+
+ [...db.clients].sort((a,b)=>a.name.localeCompare(b.name)).map(c=>{const d=debt(c.id);return`<div class="c row" onclick="openC='${c.id}';render()"><div>${esc(c.name)}<div class="mu">${esc(c.phone)}</div></div>${d>0?`<b class="red">${money(d)}</b>`:'<span class="mu">›</span>'}</div>`}).join("")}
+
+function points(){const g=db.cfg.goal;
+ return`<h1>Puntos</h1><div class="c row"><div><b>${g} puntos = ${esc(db.cfg.benefit)}</b><div class="mu">Cada corte suma 1 punto. Se acumulan y se canjean cuando quieras.</div></div><button class="b s w" onclick="cfg()">Editar</button></div>
+ <h2>Clientes</h2>`+[...db.clients].sort((a,b)=>pts(b)-pts(a)).map(c=>ptsCard(c,1)).join("")}
+function price(){form("Precio del corte",[{k:"p",l:"Precio predeterminado",t:"number",v:db.cfg.price||""}],v=>{const p=parseFloat(v.p);if(isNaN(p)||p<0)return false;db.cfg.price=p})}
+const dn=m=>m.gross&&m.gross>m.amount?` · desc. ${money(m.gross-m.amount)}`:"";
+async function dl(name,data){try{const u=URL.createObjectURL(new Blob([data],{type:"application/octet-stream"}));const a=document.createElement("a");a.href=u;a.download=name;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(u),4000);return true}catch(e){alert("No se pudo descargar");return false}}
+const stamp=()=>today();
+function datos(){const n=db.movs.length;
+ return`<h1>Datos</h1><div class="c mu">${db.clients.length} clientes · ${n} movimientos · ${db.turnos.length} turnos</div>
+ <h2>Copia de seguridad</h2><div class="c"><p class="mu" style="margin-top:0">Los datos viven en este teléfono. Descargá una copia seguido y guardala en Drive o WhatsApp.</p><button class="b" onclick="backup()">Descargar copia completa</button></div>
+ <div class="c"><p class="mu" style="margin-top:0">Recupera los datos desde una copia descargada antes (por ejemplo, de la versión anterior o si cambiás de celular).</p><input type="file" accept=".json,application/json" onchange="restore(this)"></div>
+ <h2>Caja en Excel</h2><div class="c"><p class="mu" style="margin-top:0">Todos los movimientos en un archivo CSV que se abre con Excel.</p><button class="b s" onclick="csv()">Descargar caja (CSV)</button></div>
+ <h2>Archivar meses viejos</h2><div class="c"><p class="mu" style="margin-top:0">Descarga los cobros y turnos antiguos y los saca de la app para liberar espacio. Las deudas, el gasto y los cortes de cada cliente se conservan. Los totales de caja de esos meses dejan de verse.</p><button class="b s" onclick="archive()">Archivar</button></div>`}
+const backup=()=>dl("barberia-copia-"+stamp()+".json",JSON.stringify({version:1,fecha:stamp(),db},null,1));
+const q=t=>'"'+String(t||"").replace(/"/g,'""')+'"';
+function csv(){const rows=[["Fecha","Cliente","Concepto","Tipo","Precio","Descuento","Total","Barbero"]].concat([...db.movs].sort((a,b)=>a.date.localeCompare(b.date)).map(m=>[m.date,cname(m.clientId),m.concept,m.type,m.gross||m.amount,(m.gross||m.amount)-m.amount,m.amount,bname(m.barberId)]));
+ dl("caja-"+stamp()+".csv","\ufeff"+rows.map(r=>r.map(q).join(";")).join("\n"))}
+function archive(){
+ form("Archivar meses viejos",[{k:"m",l:"Archivar todo lo anterior a",o:[["24","Hace más de 24 meses"],["12","Hace más de 12 meses"],["6","Hace más de 6 meses"]],v:"12"}],v=>{
+  const d=new Date();d.setMonth(d.getMonth()-parseInt(v.m));const cut=iso(d).slice(0,8)+"01";
+  const om=db.movs.filter(m=>m.date<cut),ot=db.turnos.filter(t=>t.date<cut);
+  if(!om.length&&!ot.length){alert("No hay datos tan antiguos.");return false}
+  if(!confirm("Se archivarán "+om.length+" movimientos y "+ot.length+" turnos anteriores a "+cut.split("-").reverse().join("/")+". Primero se descarga el archivo y después se borran de la app."))return false;
+  dl("barberia-archivo-hasta-"+cut+".json",JSON.stringify({version:1,antesDe:cut,movs:om,turnos:ot,clientes:db.clients},null,1)).then(ok=>{
+   if(!ok){alert("No se archivó nada porque no se descargó el archivo.");return}
+   om.forEach(m=>{const c=cl(m.clientId);if(!c)return;c.ab=c.ab||{d:0,s:0,c:0};if(m.type==="fiado")c.ab.d+=m.amount;if(m.type==="pago")c.ab.d-=m.amount;if(m.type!=="pago")c.ab.s+=m.amount;if(m.corte)c.ab.c++});
+   db.movs=db.movs.filter(m=>m.date>=cut);db.turnos=db.turnos.filter(t=>t.date>=cut);save();render();alert("Listo: datos archivados.")});
+  return true})}
+function restore(inp){const f=inp.files[0];if(!f)return;const r=new FileReader();r.onload=()=>{try{const x=JSON.parse(r.result);if(!x.db||!x.db.clients)throw 0;if(!confirm("Se reemplazarán TODOS los datos actuales por los de la copia ("+x.db.clients.length+" clientes). ¿Continuar?"))return;db=Object.assign({clients:[],movs:[],turnos:[],barbers:[],shifts:[],cfg:{goal:5,benefit:"Corte gratis",price:0}},x.db);save();render();alert("Copia restaurada")}catch(e){alert("El archivo no es una copia válida")}};r.readAsText(f);inp.value=""}
+const bname=id=>(db.barbers.find(b=>b.id===id)||{}).name||"";
+const barberOpts=cur=>[["","Sin asignar"],...db.barbers.filter(b=>!b.off||b.id===cur).map(b=>[b.id,b.name])];
+const fd=d=>d.split("-").reverse().join("/");
+const nowT=()=>{const d=new Date();return String(d.getHours()).padStart(2,"0")+":"+String(d.getMinutes()).padStart(2,"0")};
+const tm=t=>{const[h,m]=t.split(":");return h*60+ +m};
+const dur=s=>{if(s.out){let d=tm(s.out)-tm(s.in);return d<0?d+1440:d}return s.date===today()?Math.max(0,tm(nowT())-tm(s.in)):0};
+const fh=m=>Math.floor(m/60)+"h "+String(m%60).padStart(2,"0")+"m";
+const hrs=(id,f,t)=>db.shifts.filter(s=>s.barberId===id&&s.date>=f&&s.date<=t).reduce((a,s)=>a+dur(s),0);
+const bsum=(id,f,t,ty)=>db.movs.filter(m=>m.barberId===id&&m.type===ty&&m.date>=f&&m.date<=t).reduce((a,m)=>a+m.amount,0);
+const openShift=id=>db.shifts.find(s=>s.barberId===id&&!s.out);
+function clock(id){const o=openShift(id);
+ if(o){const y=new Date();y.setDate(y.getDate()-1);
+  if(o.date===today()||(o.date===iso(y)&&tm(nowT())<=tm(o.in)))o.out=nowT();
+  else{alert("Hay una entrada sin salida del "+fd(o.date)+". Tocá Editar en esa fichada y cargá la hora de salida.");openB=id;render();return}}
+ else db.shifts.push({id:uid(),barberId:id,date:today(),in:nowT(),out:""});
+ save();render()}
+function shiftForm(bid,sid){const s=db.shifts.find(x=>x.id===sid);
+ form(s?"Editar fichada":"Cargar fichada",[{k:"d",l:"Fecha",t:"date",v:s?s.date:today()},{k:"i",l:"Entrada",t:"time",v:s?s.in:""},{k:"o",l:"Salida (vacío si sigue trabajando)",t:"time",v:s?s.out:""}],v=>{
+  if(!v.i){alert("Ingresá la hora de entrada");return false}
+  if(s)Object.assign(s,{date:v.d||s.date,in:v.i,out:v.o});else db.shifts.push({id:uid(),barberId:bid,date:v.d||today(),in:v.i,out:v.o})})}
+function delShift(id){if(confirm("¿Borrar esta fichada?")){db.shifts=db.shifts.filter(s=>s.id!==id);save();render()}}
+function barberForm(id){const b=db.barbers.find(x=>x.id===id);
+ form(b?"Cambiar nombre":"Nuevo barbero",[{k:"n",l:"Nombre",v:b&&b.name}],v=>{if(!v.n){alert("Ingresá el nombre");return false}if(b)b.name=v.n;else db.barbers.push({id:uid(),name:v.n})})}
+function offBarber(id){if(confirm("¿Dar de baja a este barbero? Sus cobros y horas se conservan, pero ya no aparece para elegir.")){db.barbers.find(b=>b.id===id).off=true;openB=null;save();render()}}
+function equipo(){const r=ranges(),P=[["Hoy",r.t],["Semana",r.w],["Mes",r.m]];
+ if(eqRep)return informeEq();
+ if(openB){const b=db.barbers.find(x=>x.id===openB);if(!b){openB=null;return equipo()}
+  const o=openShift(b.id),sh=db.shifts.filter(s=>s.barberId===b.id).sort((x,y)=>(y.date+y.in).localeCompare(x.date+x.in)).slice(0,40);
+  return`<button class="bk" onclick="openB=null;render()">‹ Equipo</button><h1>✂ ${esc(b.name)}</h1>
+  <button class="b" onclick="clock('${b.id}')">${o?"Registrar SALIDA":"Registrar ENTRADA"}</button>
+  <div class="mu" style="margin-top:6px">${o?"En turno desde las "+o.in+(o.date!==today()?" del "+fd(o.date):""):"Fuera de turno"}</div>
+  <h2>Dinero cobrado</h2><div class="grid">${P.map(p=>{const c=bsum(b.id,p[1],r.t,"cobro"),f=bsum(b.id,p[1],r.t,"fiado");return`<div class="c"><div class="mu">${p[0]}</div><div class="big">${money(c)}</div>${f?`<div class="mu">+${money(f)} fiado</div>`:""}</div>`}).join("")}</div>
+  <h2>Horas trabajadas</h2><div class="grid">${P.map(p=>`<div class="c"><div class="mu">${p[0]}</div><div class="big">${fh(hrs(b.id,p[1],r.t))}</div></div>`).join("")}</div>
+  <h2>Pago</h2><div class="c row"><div><b>${payTxt(b)}</b><div class="mu">Se calcula con las horas o las ventas</div></div><button class="b s w" onclick="payForm('${b.id}')">Editar</button></div>${b.pay?`<div class="grid">${P.map(p=>`<div class="c"><div class="mu">A pagar ${p[0].toLowerCase()}</div><div class="big">${money(payOf(b,p[1],r.t))}</div></div>`).join("")}</div>`:""}
+  <h2>Fichadas</h2><button class="b s" onclick="shiftForm('${b.id}')">+ Cargar fichada manual</button>
+  ${sh.map(s=>`<div class="c row" style="margin-top:8px"><div><b>${fd(s.date)}</b> · ${s.in} → ${s.out||"en curso"}<div class="mu">${s.out||s.date===today()?fh(dur(s)):"sin salida"}</div></div><div><button class="b s w" onclick="shiftForm('${b.id}','${s.id}')">Editar</button> <button class="b s w" onclick="delShift('${s.id}')">✕</button></div></div>`).join("")}
+  <h2>Barbero</h2><div class="row"><button class="b s" onclick="barberForm('${b.id}')">Cambiar nombre</button><button class="b s" onclick="offBarber('${b.id}')">Dar de baja</button></div>`}
+ const bs=db.barbers.filter(b=>!b.off);
+ return`<h1>Equipo</h1><button class="b" onclick="barberForm()">+ Nuevo barbero</button><button class="b s" style="margin-top:8px" onclick="eqRep=true;render()">📊 Horas y pagos del equipo</button><h2>${bs.length?"Hoy":"Agregá a tus barberos para empezar"}</h2>`+bs.map(b=>{const o=openShift(b.id);return`<div class="c" onclick="openB='${b.id}';render()"><div class="row"><b>✂ ${esc(b.name)}</b><span class="${o?"grn":"mu"}">${o?"● desde "+o.in:"Fuera"}</span></div><div class="mu" style="margin:6px 0 10px">Cobrado hoy ${money(bsum(b.id,r.t,r.t,"cobro"))} · ${fh(hrs(b.id,r.t,r.t))} trabajadas</div><button class="b s" onclick="event.stopPropagation();clock('${b.id}')">${o?"Registrar salida":"Registrar entrada"}</button></div>`}).join("")}
+const xe=t=>String(t).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+function colN(i){let s="";for(i+=1;i>0;i=Math.floor((i-1)/26))s=String.fromCharCode(65+(i-1)%26)+s;return s}
+function sheetXml(rows){return'<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><cols><col min="1" max="8" width="22" customWidth="1"/></cols><sheetData>'+rows.map((r,ri)=>`<row r="${ri+1}">`+r.map((c,ci)=>{let v=c,st=0;if(Array.isArray(c)){v=c[0];st=c[1]}if(v===""||v==null)return"";const ref=colN(ci)+(ri+1);return typeof v==="number"?`<c r="${ref}" s="${st}"><v>${v}</v></c>`:`<c r="${ref}" s="${st}" t="inlineStr"><is><t xml:space="preserve">${xe(v)}</t></is></c>`}).join("")+"</row>").join("")+"</sheetData></worksheet>"}
+function zipBlob(files){const te=new TextEncoder(),T=[];for(let n=0;n<256;n++){let c=n;for(let k=0;k<8;k++)c=c&1?0xEDB88320^(c>>>1):c>>>1;T[n]=c>>>0}
+ const crc=b=>{let c=-1;for(const x of b)c=T[(c^x)&255]^(c>>>8);return(c^-1)>>>0};
+ const parts=[],cd=[];let off=0;
+ for(const[name,txt]of files){const nb=te.encode(name),d=te.encode(txt),c=crc(d);
+  const h=new DataView(new ArrayBuffer(30));h.setUint32(0,0x04034b50,true);h.setUint16(4,20,true);h.setUint16(6,0x0800,true);h.setUint16(12,0x21,true);h.setUint32(14,c,true);h.setUint32(18,d.length,true);h.setUint32(22,d.length,true);h.setUint16(26,nb.length,true);
+  parts.push(new Uint8Array(h.buffer),nb,d);
+  const e=new DataView(new ArrayBuffer(46));e.setUint32(0,0x02014b50,true);e.setUint16(4,20,true);e.setUint16(6,20,true);e.setUint16(8,0x0800,true);e.setUint16(14,0x21,true);e.setUint32(16,c,true);e.setUint32(20,d.length,true);e.setUint32(24,d.length,true);e.setUint16(28,nb.length,true);e.setUint32(42,off,true);
+  cd.push(new Uint8Array(e.buffer),nb);off+=30+nb.length+d.length}
+ const cs=cd.reduce((a,x)=>a+x.length,0),z=new DataView(new ArrayBuffer(22));z.setUint32(0,0x06054b50,true);z.setUint16(8,files.length,true);z.setUint16(10,files.length,true);z.setUint32(12,cs,true);z.setUint32(16,off,true);
+ return new Blob([...parts,...cd,new Uint8Array(z.buffer)],{type:"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"})}
+function xlsxBlob(sheets){const H='<?xml version="1.0" encoding="UTF-8" standalone="yes"?>',N="http://schemas.openxmlformats.org/",n=sheets.length;
+ const files=[["[Content_Types].xml",H+`<Types xmlns="${N}package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>`+sheets.map((s,i)=>`<Override PartName="/xl/worksheets/sheet${i+1}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>`).join("")+"</Types>"],
+ ["_rels/.rels",H+`<Relationships xmlns="${N}package/2006/relationships"><Relationship Id="rId1" Type="${N}officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>`],
+ ["xl/workbook.xml",H+`<workbook xmlns="${N}spreadsheetml/2006/main" xmlns:r="${N}officeDocument/2006/relationships"><sheets>`+sheets.map((s,i)=>`<sheet name="${xe(s[0])}" sheetId="${i+1}" r:id="rId${i+1}"/>`).join("")+"</sheets></workbook>"],
+ ["xl/_rels/workbook.xml.rels",H+`<Relationships xmlns="${N}package/2006/relationships">`+sheets.map((s,i)=>`<Relationship Id="rId${i+1}" Type="${N}officeDocument/2006/relationships/worksheet" Target="worksheets/sheet${i+1}.xml"/>`).join("")+`<Relationship Id="rId${n+1}" Type="${N}officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>`],
+ ["xl/styles.xml",H+`<styleSheet xmlns="${N}spreadsheetml/2006/main"><numFmts count="1"><numFmt numFmtId="164" formatCode="&quot;$&quot;#,##0"/></numFmts><fonts count="2"><font><sz val="11"/><name val="Calibri"/></font><font><b/><sz val="11"/><name val="Calibri"/></font></fonts><fills count="3"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill><fill><patternFill patternType="solid"><fgColor rgb="FFE3EFEC"/><bgColor indexed="64"/></patternFill></fill></fills><borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="4"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/><xf numFmtId="0" fontId="1" fillId="2" borderId="0" xfId="0" applyFont="1" applyFill="1"/><xf numFmtId="164" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/><xf numFmtId="164" fontId="1" fillId="0" borderId="0" xfId="0" applyNumberFormat="1" applyFont="1"/></cellXfs><cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>`]];
+ sheets.forEach((s,i)=>files.push([`xl/worksheets/sheet${i+1}.xml`,sheetXml(s[1])]));
+ return zipBlob(files)}
+
+function rango(q=rp){const d=new Date(q.d+"T12:00:00");let a=new Date(d),b=new Date(d);
+ if(q.p==="w"){a.setDate(d.getDate()-(d.getDay()+6)%7);b=new Date(a);b.setDate(a.getDate()+6)}
+ if(q.p==="m"){a=new Date(d.getFullYear(),d.getMonth(),1);b=new Date(d.getFullYear(),d.getMonth()+1,0)}
+ return[iso(a),iso(b)]}
+const sm=(a,f)=>a.reduce((t,m)=>t+f(m),0);
+function reporte(){const[f,t]=rango(),ms=db.movs.filter(m=>m.date>=f&&m.date<=t).sort((a,b)=>a.date.localeCompare(b.date)),ven=ms.filter(m=>m.type!=="pago");
+ const cob=sm(ms.filter(m=>m.type==="cobro"),m=>m.amount),fia=sm(ms.filter(m=>m.type==="fiado"),m=>m.amount),pag=sm(ms.filter(m=>m.type==="pago"),m=>m.amount),desc=sm(ven,m=>m.gross&&m.gross>m.amount?m.gross-m.amount:0);
+ const ids=[...new Set([...db.barbers.filter(b=>!b.off).map(b=>b.id),...ven.map(m=>m.barberId||"")])];
+ const byB=ids.map(id=>{const v=ven.filter(m=>(m.barberId||"")===id);return{n:id?(bname(id)||"Barbero eliminado"):"Sin asignar",q:v.length,c:sm(v.filter(m=>m.type==="cobro"),m=>m.amount),f:sm(v.filter(m=>m.type==="fiado"),m=>m.amount)}}).filter(b=>b.q||b.n!=="Sin asignar");
+ return{f,t,ms,ven,cob,fia,pag,desc,byB}}
+function informe(){const R=reporte(),lbl=rp.p==="d"?fd(R.f):fd(R.f)+" al "+fd(R.t);
+ return`<button class="bk" onclick="rep=false;render()">‹ Caja</button><h1>Informe de ventas</h1>
+ <div class="row">${[["d","Día"],["w","Semana"],["m","Mes"]].map(x=>`<button class="b ${rp.p===x[0]?"":"s"}" onclick="rp.p='${x[0]}';render()">${x[1]}</button>`).join("")}</div>
+ <label style="display:block;margin-top:10px">Fecha de referencia</label><input type="date" value="${rp.d}" onchange="rp.d=this.value||today();render()">
+ <div class="c"><div class="mu">${lbl}</div><div class="big" style="font-size:28px">${money(R.cob+R.fia)}</div><div class="mu">Total vendido · ${R.ven.length} venta${R.ven.length==1?"":"s"}</div></div>
+ <div class="grid"><div class="c"><div class="mu">Cobrado</div><div class="big">${money(R.cob)}</div></div><div class="c"><div class="mu">Fiado</div><div class="big red">${money(R.fia)}</div></div><div class="c"><div class="mu">Pagos deuda</div><div class="big">${money(R.pag)}</div></div></div>
+ <div class="c row" style="margin-top:8px"><span class="mu">Ingreso total en caja</span><b>${money(R.cob+R.pag)}</b></div>${R.desc?`<div class="mu">Descuentos otorgados: ${money(R.desc)}</div>`:""}
+ <h2>Total por barbero</h2>${R.byB.map(b=>`<div class="c row"><div><b>✂ ${esc(b.n)}</b><div class="mu">${b.q} venta${b.q==1?"":"s"} · cobrado ${money(b.c)}${b.f?" · fiado "+money(b.f):""}</div></div><b>${money(b.c+b.f)}</b></div>`).join("")||'<p class="mu">Sin ventas en este período.</p>'}
+ <button class="b" style="margin-top:12px" onclick="exportXlsx()">Exportar a Excel</button>`}
+function exportXlsx(){const R=reporte(),H=t=>[t,1],$=n=>[n,2],B=n=>[n,3],lbl=rp.p==="d"?fd(R.f):fd(R.f)+" al "+fd(R.t),TY={cobro:"Cobrado",fiado:"A cuenta",pago:"Pago de deuda"};
+ const res=[["Informe de ventas - Barbería"],["Período",{d:"Día",w:"Semana",m:"Mes"}[rp.p]],["Desde",fd(R.f)],["Hasta",fd(R.t)],[],[H("Concepto"),H("Monto")],["Total vendido (cobrado + fiado)",B(R.cob+R.fia)],["Cobrado en el momento",$(R.cob)],["Servicios a cuenta (fiado)",$(R.fia)],["Pagos de deuda recibidos",$(R.pag)],["Ingreso total en caja",B(R.cob+R.pag)],["Descuentos otorgados",$(R.desc)],["Cantidad de ventas",R.ven.length]];
+ const bb=[[H("Barbero"),H("Ventas"),H("Cobrado"),H("Fiado"),H("Total vendido")],...R.byB.map(b=>[b.n,b.q,$(b.c),$(b.f),$(b.c+b.f)]),["TOTAL",R.ven.length,B(R.cob),B(R.fia),B(R.cob+R.fia)]];
+ const det=[[H("Fecha"),H("Cliente"),H("Barbero"),H("Concepto"),H("Tipo"),H("Precio"),H("Descuento"),H("Total")],...R.ms.map(m=>[fd(m.date),cname(m.clientId),bname(m.barberId),m.concept,TY[m.type],$(m.gross||m.amount),$((m.gross||m.amount)-m.amount),$(m.amount)])];
+ dl("informe-ventas-"+{d:"dia",w:"semana",m:"mes"}[rp.p]+"-"+R.f+".xlsx",xlsxBlob([["Resumen",res],["Por barbero",bb],["Detalle",det]]))}
+
+function editMov(id){const m=db.movs.find(x=>x.id===id);if(!m)return;const pg=m.type==="pago",g=m.gross||m.amount,df=g-m.amount;
+ form("Editar movimiento",[{k:"c",l:"Cliente",o:clientOpts(m.type==="cobro"),v:m.clientId||""},{k:"d",l:"Concepto",v:m.concept},
+  ...(!pg&&db.barbers.length?[{k:"b",l:"Barbero",o:barberOpts(m.barberId),v:m.barberId||""}]:[]),
+  {k:"a",l:pg?"Monto":"Precio",t:"number",v:g},
+  ...(!pg?[{k:"dt2",l:"Descuento",o:[["n","Sin descuento"],["p","Porcentaje (%)"],["m","Monto ($)"]],v:df>0?"m":"n"},{k:"dv",l:"Valor del descuento",t:"number",v:df>0?df:""}]:[]),
+  {k:"dt",l:"Fecha",t:"date",v:m.date},...(!pg?[{k:"cut",l:"¿Cuenta como corte para puntos?",o:[["1","Sí"],["0","No"]],v:m.corte?"1":"0"}]:[])],v=>{
+  const a=parseFloat(v.a);if(!a||a<=0){alert("Ingresá un monto");return false}
+  if(m.type!=="cobro"&&!v.c){alert("Elegí un cliente");return false}
+  Object.assign(m,{clientId:v.c,concept:v.d,amount:pg?a:calc(v),gross:a,date:v.dt||m.date});
+  if(!pg){if(v.b!==undefined)m.barberId=v.b;m.corte=v.cut==="1"&&!!v.c}},pg?null:calc)}
+function delMov(id){const m=db.movs.find(x=>x.id===id);if(m&&confirm("¿Eliminar "+m.concept+" por "+money(m.amount)+"? No se puede deshacer.")){db.movs=db.movs.filter(x=>x.id!==id);save();render()}}
+const payTxt=b=>!b.pay?"Sin definir":b.pay.mode==="hour"?money(b.pay.rate)+" por hora":b.pay.rate+"% de las ventas";
+const payOf=(b,f,t)=>!b.pay?0:b.pay.mode==="hour"?hrs(b.id,f,t)/60*b.pay.rate:(bsum(b.id,f,t,"cobro")+bsum(b.id,f,t,"fiado"))*b.pay.rate/100;
+function payForm(id){const b=db.barbers.find(x=>x.id===id);
+ form("Forma de pago · "+b.name,[{k:"m",l:"Tipo de pago",o:[["","Sin definir"],["hour","Monto por hora"],["pct","Porcentaje de las ventas"]],v:b.pay?b.pay.mode:""},{k:"r",l:"Valor ($ por hora, o % de ventas)",t:"number",v:b.pay?b.pay.rate:""}],v=>{
+  const r=parseFloat(v.r);if(v.m&&(isNaN(r)||r<0)){alert("Ingresá un valor");return false}b.pay=v.m?{mode:v.m,rate:r}:null})}
+const periodUI=(q,n)=>`<div class="row">${[["d","Día"],["w","Semana"],["m","Mes"]].map(x=>`<button class="b ${q.p===x[0]?"":"s"}" onclick="${n}.p='${x[0]}';render()">${x[1]}</button>`).join("")}</div><label style="display:block;margin-top:10px">Fecha de referencia</label><input type="date" value="${q.d}" onchange="${n}.d=this.value||today();render()">`;
+function eqRows(f,t){return db.barbers.map(b=>{const sh=db.shifts.filter(x=>x.barberId===b.id&&x.date>=f&&x.date<=t&&dur(x)>0),h=hrs(b.id,f,t),v=bsum(b.id,f,t,"cobro")+bsum(b.id,f,t,"fiado");return{b,h,d:new Set(sh.map(x=>x.date)).size,v,p:payOf(b,f,t)}}).filter(x=>!x.b.off||x.h||x.v)}
+function informeEq(){const[f,t]=rango(hp),L=eqRows(f,t),lbl=hp.p==="d"?fd(f):fd(f)+" al "+fd(t);
+ return`<button class="bk" onclick="eqRep=false;render()">‹ Equipo</button><h1>Horas y pagos</h1>${periodUI(hp,"hp")}
+ <div class="grid" style="margin-top:10px"><div class="c"><div class="mu">Horas</div><div class="big">${fh(sm(L,x=>x.h))}</div></div><div class="c"><div class="mu">Ventas</div><div class="big">${money(sm(L,x=>x.v))}</div></div><div class="c"><div class="mu">A pagar</div><div class="big">${money(sm(L,x=>x.p))}</div></div></div>
+ <h2>${lbl} · tocá un barbero para ver o editar sus horas</h2>${L.map(x=>`<div class="c" onclick="eqRep=false;openB='${x.b.id}';render()"><div class="row"><b>✂ ${esc(x.b.name)}</b><b class="grn">${x.b.pay?money(x.p):""}</b></div><div class="mu">${fh(x.h)} · ${x.d} día${x.d==1?"":"s"} · ventas ${money(x.v)}</div><div class="mu">Pago: ${payTxt(x.b)}</div></div>`).join("")||'<p class="mu">Todavía no hay barberos.</p>'}
+ <button class="b" style="margin-top:12px" onclick="exportEq()">Exportar a Excel</button>`}
+function exportEq(){const[f,t]=rango(hp),L=eqRows(f,t),H=x=>[x,1],$=n=>[n,2],B=n=>[n,3],d2=m=>Math.round(m/60*100)/100;
+ const res=[["Horas y pagos del equipo - Barbería"],["Desde",fd(f)],["Hasta",fd(t)],[],[H("Barbero"),H("Horas"),H("Días trabajados"),H("Ventas"),H("Forma de pago"),H("A pagar")],...L.map(x=>[x.b.name,d2(x.h),x.d,$(x.v),payTxt(x.b),$(Math.round(x.p))]),["TOTAL",d2(sm(L,x=>x.h)),"",B(sm(L,x=>x.v)),"",B(Math.round(sm(L,x=>x.p)))]];
+ const det=[[H("Fecha"),H("Barbero"),H("Entrada"),H("Salida"),H("Horas")],...db.shifts.filter(x=>x.date>=f&&x.date<=t).sort((a,b)=>(a.date+a.in).localeCompare(b.date+b.in)).map(x=>[fd(x.date),bname(x.barberId),x.in,x.out||"sin salida",d2(dur(x))])];
+ dl("horas-y-pagos-"+{d:"dia",w:"semana",m:"mes"}[hp.p]+"-"+f+".xlsx",xlsxBlob([["Resumen",res],["Horas por día",det]]))}
+function cfg(){form("Configurar beneficio",[{k:"g",l:"Puntos necesarios por beneficio",t:"number",v:db.cfg.goal},{k:"b",l:"Beneficio",v:db.cfg.benefit}],v=>{const g=parseInt(v.g);if(!g||g<1)return false;db.cfg=Object.assign(db.cfg,{goal:g,benefit:v.b||"Beneficio"})})}
+function redeem(id){if(confirm("¿Canjear "+db.cfg.benefit+" para "+cname(id)+"?")){{const c=cl(id);c.pu=(c.pu!=null?c.pu:(c.redeemed||0)*db.cfg.goal)+db.cfg.goal;c.redeemed=(c.redeemed||0)+1}save();render()}}
+
+function render(){
+ if(!ready){$("#app").innerHTML='<p class="mu" style="text-align:center;margin-top:40vh">Cargando…</p>';return}
+ $("#app").innerHTML={home,ag:agenda,cli:clients,pts:points,eq:equipo,dat:datos}[tab]()+`<p class="mu" id="st" style="text-align:center;margin-top:18px">${status}</p>`;
+ $("#nav").innerHTML=tabs.map(t=>`<button class="${t[0]===tab?"on":""}" onclick="tab='${t[0]}';openC=null;openB=null;rep=false;eqRep=false;render();scrollTo(0,0)"><b>${t[1]}</b>${t[2]}</button>`).join("");
+}
+render();load();if("serviceWorker" in navigator)navigator.serviceWorker.register("sw.js").catch(()=>{});
+</script></body></html>
