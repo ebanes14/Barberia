@@ -29,6 +29,7 @@ nav div{display:flex;width:100%;max-width:480px}nav button{flex:1;background:non
 </style></head><body>
 <div id="app"></div>
 <nav><div id="nav"></div></nav>
+<script src="clave.js"></script>
 <script>
 let db={clients:[],movs:[],turnos:[],barbers:[],shifts:[],cfg:{goal:5,benefit:"Corte gratis",price:0}};
 let DB=null,ready=false,status="",last={};
@@ -100,7 +101,7 @@ function newTurno(){
 
 function home(){if(rep)return informe();const r=ranges(),k=[["Hoy",sum(r.t,r.t)],["Semana",sum(r.w,r.t)],["Mes",sum(r.m,r.t)]];
  const last=db.movs.filter(m=>m.date===hd);
- return`<h1>Caja</h1><div class="grid">${k.map(x=>`<div class="c"><div class="mu">${x[0]}</div><div class="big">${money(x[1])}</div></div>`).join("")}</div>
+ return`<h1>Caja</h1>${licChip()}<div class="grid">${k.map(x=>`<div class="c"><div class="mu">${x[0]}</div><div class="big">${money(x[1])}</div></div>`).join("")}</div>
  <div class="c row"><div><div class="mu">Precio del corte</div><div class="big">${db.cfg.price?money(db.cfg.price):"Sin definir"}</div></div><button class="b s w" onclick="price()">Editar</button></div>
  <button class="b s" style="margin-top:10px" onclick="rep=true;render()">📊 Informe de ventas</button>
  <h2>Registrar</h2><button class="b" onclick="newMov('cobro')">+ Cobro</button>
@@ -137,7 +138,7 @@ async function dl(name,data){try{const u=URL.createObjectURL(new Blob([data],{ty
 const stamp=()=>today();
 function datos(){const n=db.movs.length;
  return`<h1>Datos</h1><div class="c mu">${db.clients.length} clientes · ${n} movimientos · ${db.turnos.length} turnos</div>
- <h2>Suscripción</h2><div class="c"><div class="row"><span class="mu">Código de cliente</span><b>${lic.id}</b></div><div class="row" style="margin-top:6px"><span class="mu">${PUB?(left()>=0?"Activa hasta":"Venció el"):"Sin control de suscripción"}</span><b>${PUB?fd(validUntil()):""}</b></div>${PUB?`<button class="b s" style="margin-top:10px" onclick="renewForm()">Ingresar clave de renovación</button>`:""}</div>
+ <h2>Suscripción</h2><div class="c"><div class="row"><span class="mu">Código de cliente</span><b>${lic.id}</b></div><div class="row" style="margin-top:6px"><span class="mu">${PUB?(left()>=0?"Activa hasta":"Venció el"):"Sin control de suscripción"}</span><b>${PUB?fd(validUntil()):""}</b></div>${PUB?`<div class="row" style="margin-top:6px"><span class="mu">Días restantes</span><b class="${left()<=5?"red":"grn"}">${Math.max(0,left())}</b></div>`:""}${PUB?`<button class="b s" style="margin-top:10px" onclick="renewForm()">Ingresar clave de renovación</button>`:""}</div>
  <h2>Copia de seguridad</h2><div class="c"><p class="mu" style="margin-top:0">Los datos viven en este teléfono. Descargá una copia seguido y guardala en Drive o WhatsApp.</p><button class="b" onclick="backup()">Descargar copia completa</button></div>
  <div class="c"><p class="mu" style="margin-top:0">Recupera los datos desde una copia descargada antes (por ejemplo, de la versión anterior o si cambiás de celular).</p><input type="file" accept=".json,application/json" onchange="restore(this)"></div>
  <h2>Caja en Excel</h2><div class="c"><p class="mu" style="margin-top:0">Todos los movimientos en un archivo CSV que se abre con Excel.</p><button class="b s" onclick="csv()">Descargar caja (CSV)</button></div>
@@ -272,7 +273,7 @@ function exportEq(){const[f,t]=rango(hp),L=eqRows(f,t),H=x=>[x,1],$=n=>[n,2],B=n
  const det=[[H("Fecha"),H("Barbero"),H("Entrada"),H("Salida"),H("Horas")],...db.shifts.filter(x=>x.date>=f&&x.date<=t).sort((a,b)=>(a.date+a.in).localeCompare(b.date+b.in)).map(x=>[fd(x.date),bname(x.barberId),x.in,x.out||"sin salida",d2(dur(x))])];
  dl("horas-y-pagos-"+{d:"dia",w:"semana",m:"mes"}[hp.p]+"-"+f+".xlsx",xlsxBlob([["Resumen",res],["Horas por día",det]]))}
 
-const PUB={"kty":"EC","crv":"P-256","x":"wnmvGy132RxOo1driEPnlsIQm_Fyw9asiD-s_jVX9aU","y":"0Ma0tEatUrrGlB-qzLTdnCZaPpvOwdqtNvV7q5tuYw8"};
+const PUB=window.PUB_KEY||null;
 const TRIAL=7;
 let lic=null,lockMsg="";
 const dys=(a,b)=>Math.round((new Date(b+"T12:00:00")-new Date(a+"T12:00:00"))/864e5);
@@ -295,6 +296,8 @@ async function activate(tok){const m=$("#lm"),say=t=>{if(m)m.textContent=t;else 
   if(!lic.until||d>lic.until)lic.until=d;licSave();render();if(!m)alert("Listo. Suscripción activa hasta el "+fd(lic.until))
  }catch(e){say(typeof e==="string"?e:"Clave inválida")}}
 const lockHtml=()=>`<div style="text-align:center;margin-top:8vh"><div style="font-size:48px">🔒</div><h1>${lockMsg?"Fecha incorrecta":"Suscripción vencida"}</h1><p class="mu">${lockMsg||"Para seguir usando la app, pedí tu clave de activación. Tus datos están guardados y no se pierden."}</p><div class="c"><div class="mu">Tu código de cliente</div><div class="big" style="font-size:30px;letter-spacing:4px">${lic.id}</div></div><div style="text-align:left"><label>Clave de activación</label><input id="lk" placeholder="Pegá la clave acá" autocapitalize="off" autocomplete="off"></div><button class="b" onclick="activate($('#lk').value)">Activar</button><p id="lm" class="red"></p></div>`;
+const licTxt=()=>left()<0?"vencida":left()==0?"vence hoy":"quedan "+left()+" día"+(left()==1?"":"s");
+const licChip=()=>PUB?`<div class="mu" style="margin:-6px 0 12px">🔑 Licencia: <b class="${left()<=5?"red":"grn"}">${licTxt()}</b></div>`:"";
 const banner=()=>PUB&&left()>=0&&left()<=5?`<div class="c" style="background:var(--acl)">⏳ Tu suscripción vence ${left()==0?"hoy":"en "+left()+" día"+(left()==1?"":"s")}. Pedí tu clave para renovar.</div>`:"";
 const renewForm=()=>form("Renovar suscripción",[{k:"k",l:"Clave de activación"}],v=>{activate(v.k)});
 function cfg(){form("Configurar beneficio",[{k:"g",l:"Puntos necesarios por beneficio",t:"number",v:db.cfg.goal},{k:"b",l:"Beneficio",v:db.cfg.benefit}],v=>{const g=parseInt(v.g);if(!g||g<1)return false;db.cfg=Object.assign(db.cfg,{goal:g,benefit:v.b||"Beneficio"})})}
