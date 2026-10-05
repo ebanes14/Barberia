@@ -272,7 +272,7 @@ function exportEq(){const[f,t]=rango(hp),L=eqRows(f,t),H=x=>[x,1],$=n=>[n,2],B=n
  const det=[[H("Fecha"),H("Barbero"),H("Entrada"),H("Salida"),H("Horas")],...db.shifts.filter(x=>x.date>=f&&x.date<=t).sort((a,b)=>(a.date+a.in).localeCompare(b.date+b.in)).map(x=>[fd(x.date),bname(x.barberId),x.in,x.out||"sin salida",d2(dur(x))])];
  dl("horas-y-pagos-"+{d:"dia",w:"semana",m:"mes"}[hp.p]+"-"+f+".xlsx",xlsxBlob([["Resumen",res],["Horas por día",det]]))}
 
-const PUB=null;
+const PUB={"kty":"EC","crv":"P-256","x":"wnmvGy132RxOo1driEPnlsIQm_Fyw9asiD-s_jVX9aU","y":"0Ma0tEatUrrGlB-qzLTdnCZaPpvOwdqtNvV7q5tuYw8"};
 const TRIAL=7;
 let lic=null,lockMsg="";
 const dys=(a,b)=>Math.round((new Date(b+"T12:00:00")-new Date(a+"T12:00:00"))/864e5);
